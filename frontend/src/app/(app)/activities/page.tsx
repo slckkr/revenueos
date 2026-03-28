@@ -4,15 +4,10 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Plus, Trash2, Phone, Mail, Users, FileText, CheckSquare, Monitor, ArrowRight } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, ActivityItem } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-type Activity = {
-  id: string; company_id: string; contact_id?: string | null; deal_id?: string | null
-  type: string; subject?: string | null; description?: string | null; activity_date: string
-  companies?: { name: string }; contacts?: { name: string; email: string } | null; deals?: { name: string } | null
-}
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
   call: <Phone className="w-3.5 h-3.5" />,
@@ -60,7 +55,7 @@ export default function ActivitiesPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [formError, setFormError] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<Activity | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ActivityItem | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['activities', typeFilter, companyFilter],
