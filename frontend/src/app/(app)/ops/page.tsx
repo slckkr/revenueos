@@ -160,9 +160,9 @@ export default function OpsPage() {
                         {issue.object_type}: <span className="font-mono">{issue.object_display}</span>
                       </p>
                     )}
-                    {issue.suggested_fix_json?.action && (
+                    {issue.suggested_fix_json?.action != null && (
                       <p className="text-xs text-blue-400 mt-1.5 bg-blue-950 border border-blue-900 px-2 py-1 rounded inline-block">
-                        Suggested: {issue.suggested_fix_json.action as string}
+                        Suggested: {String(issue.suggested_fix_json.action)}
                       </p>
                     )}
                     <p className="text-xs text-text-muted mt-2">{formatRelativeTime(issue.detected_at)}</p>

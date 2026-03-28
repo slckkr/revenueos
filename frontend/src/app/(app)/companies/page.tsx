@@ -41,7 +41,7 @@ function formToPayload(f: FormState) {
     name: f.name.trim(),
     domain: f.domain.trim() || null,
     segment: (f.segment || null) as 'SMB' | 'MID' | 'ENT' | null,
-    status: f.status || 'active',
+    status: (f.status || 'active') as 'active' | 'churned' | 'at-risk' | 'prospect',
     country: f.country.trim() || null,
     city: f.city.trim() || null,
     industry: f.industry.trim() || null,

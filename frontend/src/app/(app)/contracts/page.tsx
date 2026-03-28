@@ -11,11 +11,11 @@ import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 type Contract = {
-  id: string; company_id: string; contract_number?: string; title?: string
-  start_date: string; end_date: string; total_value?: number; currency: string
-  auto_renewal: boolean; renewal_term_months?: number; status: string
-  signed_date?: string; notes?: string; created_at: string
-  companies?: { name: string; segment?: string }
+  id: string; company_id: string; contract_number?: string | null; title?: string | null
+  start_date: string; end_date: string; total_value?: number | null; currency: string
+  auto_renewal: boolean; renewal_term_months?: number | null; status: string
+  signed_date?: string | null; notes?: string | null; created_at?: string
+  companies?: { name: string; segment?: string | null }
 }
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'default'> = {

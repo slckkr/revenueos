@@ -6,7 +6,7 @@ import { api } from '@/lib/api'
 
 type FunnelStage = {
   id: string; name: string; sort_order: number; color: string
-  conversion_target?: number; count: number; conversion_from_prev: number | null
+  conversion_target?: number | null; count: number; conversion_from_prev: number | null
 }
 
 export default function FunnelPage() {

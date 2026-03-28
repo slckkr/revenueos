@@ -12,18 +12,18 @@ type Playbook = {
   name: string
   trigger_type: string
   trigger_key: string
-  trigger_threshold?: number
+  trigger_threshold?: number | null
   recommended_actions_json: string[]
   is_active: boolean
-  triggers_30d: number
-  created_at: string
+  triggers_30d?: number
+  created_at?: string
 }
 
 type TriggerLog = {
   id: string
   playbook_id: string
-  company_id?: string
-  trigger_value?: number
+  company_id?: string | null
+  trigger_value?: number | null
   fired_at: string
   playbooks?: { name: string; trigger_key: string }
   companies?: { name: string }
@@ -167,7 +167,7 @@ export default function PlaybooksPage() {
                         <span className={`text-xs px-2 py-0.5 rounded font-medium ${TRIGGER_TYPE_COLORS[pb.trigger_type] || 'bg-surface text-text-muted'}`}>
                           {TRIGGER_TYPE_LABELS[pb.trigger_type] || pb.trigger_type}
                         </span>
-                        {pb.triggers_30d > 0 && (
+                        {(pb.triggers_30d ?? 0) > 0 && (
                           <span className="text-xs text-text-muted flex items-center gap-1">
                             <Play className="w-3 h-3" /> {pb.triggers_30d}× this month
                           </span>

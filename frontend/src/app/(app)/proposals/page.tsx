@@ -11,10 +11,10 @@ import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 type Proposal = {
-  id: string; company_id: string; deal_id?: string; proposal_number?: string; title?: string
-  amount?: number; currency: string; status: string; sent_date?: string; expiry_date?: string
-  accepted_date?: string; notes?: string; created_at: string
-  companies?: { name: string }; deals?: { name: string }
+  id: string; company_id: string; deal_id?: string | null; proposal_number?: string | null; title?: string | null
+  amount?: number | null; currency: string; status: string; sent_date?: string | null; expiry_date?: string | null
+  accepted_date?: string | null; notes?: string | null; created_at?: string
+  companies?: { name: string }; deals?: { name: string } | null
 }
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'default' | 'info'> = {

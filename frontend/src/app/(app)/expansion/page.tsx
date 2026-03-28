@@ -15,7 +15,7 @@ type AccountScore = {
   score_value: number
   reasons_json: string[]
   computed_at: string
-  companies?: { id: string; name: string; segment?: string }
+  companies?: { id: string; name: string; segment?: string | null }
 }
 
 function ScoreBadge({ score }: { score: number }) {

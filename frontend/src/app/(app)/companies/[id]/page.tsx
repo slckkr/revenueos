@@ -91,7 +91,7 @@ export default function CompanyDetailPage() {
   })
 
   const updateTaskMutation = useMutation({
-    mutationFn: ({ taskId, status }: { taskId: string; status: string }) => api.updateTask(taskId, { status }),
+    mutationFn: ({ taskId, status }: { taskId: string; status: string }) => api.updateTask(taskId, { status: status as 'open' | 'in_progress' | 'done' | 'cancelled' }),
     onSuccess: () => refetchTasks(),
   })
 

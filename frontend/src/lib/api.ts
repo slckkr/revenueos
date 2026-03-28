@@ -989,6 +989,7 @@ export interface PipelineMetrics {
   win_rate: number
   avg_deal_size: number
   total_pipeline_value: number
+  weighted_pipeline: number
   open_deals: number
 }
 

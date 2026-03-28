@@ -10,10 +10,10 @@ type Notification = {
   id: string
   type: string
   title: string
-  body?: string
+  body?: string | null
   is_read: boolean
-  link?: string
-  company_id?: string
+  link?: string | null
+  company_id?: string | null
   created_at: string
   companies?: { name: string }
 }

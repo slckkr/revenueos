@@ -9,9 +9,9 @@ import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 type Activity = {
-  id: string; company_id: string; contact_id?: string; deal_id?: string
-  type: string; subject?: string; description?: string; activity_date: string
-  companies?: { name: string }; contacts?: { name: string; email: string }; deals?: { name: string }
+  id: string; company_id: string; contact_id?: string | null; deal_id?: string | null
+  type: string; subject?: string | null; description?: string | null; activity_date: string
+  companies?: { name: string }; contacts?: { name: string; email: string } | null; deals?: { name: string } | null
 }
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {

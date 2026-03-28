@@ -11,10 +11,10 @@ import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 type Deal = {
-  id: string; company_id: string; name: string; stage: string; amount?: number
-  currency: string; probability?: number; expected_close_date?: string
-  actual_close_date?: string; deal_type?: string; status: string; notes?: string
-  product_id?: string; companies?: { name: string; segment?: string }; products?: { name: string }
+  id: string; company_id: string; name: string; stage: string; amount?: number | null
+  currency: string; probability?: number | null; expected_close_date?: string | null
+  actual_close_date?: string | null; deal_type?: string | null; status: string; notes?: string | null
+  product_id?: string | null; companies?: { name: string; segment?: string | null }; products?: { name: string } | null
 }
 
 type FormState = {
