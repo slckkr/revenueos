@@ -4,10 +4,9 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Plus, Trash2, Phone, Mail, Users, FileText, CheckSquare, Monitor, ArrowRight } from 'lucide-react'
-import { api, ActivityItem } from '@/lib/api'
+import { api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
   call: <Phone className="w-3.5 h-3.5" />,
@@ -55,7 +54,7 @@ export default function ActivitiesPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [formError, setFormError] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<ActivityItem | null>(null)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['activities', typeFilter, companyFilter],
@@ -86,7 +85,7 @@ export default function ActivitiesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.deleteActivity(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['activities'] }); setDeleteTarget(null) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['activities'] }); setDeleteTargetId(null) },
   })
 
   function openCreate() { setForm(EMPTY_FORM); setFormError(''); setFormOpen(true) }
@@ -178,7 +177,7 @@ export default function ActivitiesPage() {
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-xs text-text-muted">{formatActivityDate(act.activity_date)}</span>
                         <button
-                          onClick={() => setDeleteTarget(act)}
+                          onClick={() => setDeleteTargetId(act.id)}
                           className="p-1 rounded hover:bg-card text-text-muted hover:text-churn-red transition-colors opacity-0 group-hover:opacity-100"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -243,9 +242,9 @@ export default function ActivitiesPage() {
       </Modal>
 
       <ConfirmDialog
-        open={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+        open={!!deleteTargetId}
+        onClose={() => setDeleteTargetId(null)}
+        onConfirm={() => deleteTargetId && deleteMutation.mutate(deleteTargetId)}
         title="Delete Activity"
         message="Delete this activity? This cannot be undone."
         loading={deleteMutation.isPending}
