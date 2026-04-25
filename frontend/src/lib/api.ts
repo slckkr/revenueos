@@ -118,6 +118,22 @@ export const api = {
       `/metrics/anomalies${month ? `?month=${month}` : ''}`
     ),
 
+  getChurnRates: (months = 24) =>
+    fetchJSON<{
+      success: true; data: {
+        monthly: Array<{
+          month: string; logo_churn_rate: number; revenue_churn_rate: number
+          churned_count: number; churned_mrr: number; prev_active_count: number; prev_mrr: number
+          companies: Array<{ id: string; name: string; mrr_lost: number }>
+        }>
+        annual: Array<{
+          year: number; logo_churn_rate: number; revenue_churn_rate: number
+          churned_count: number; churned_mrr: number; avg_churned_mrr: number
+          companies: Array<{ id: string; name: string; mrr_lost: number; month: string }>
+        }>
+      }
+    }>(`/metrics/churn-rates?months=${months}`),
+
   // Companies
   getCompanies: (params?: { search?: string; segment?: string; page?: number; sort?: string; limit?: number }) => {
     const qs = new URLSearchParams()

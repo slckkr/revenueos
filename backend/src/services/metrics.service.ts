@@ -398,6 +398,142 @@ class MetricsService {
 
     return data?.length || 0
   }
+
+  async getChurnRates(tenantId: string, months: number = 24): Promise<{
+    monthly: Array<{
+      month: string
+      logo_churn_rate: number
+      revenue_churn_rate: number
+      churned_count: number
+      churned_mrr: number
+      prev_active_count: number
+      prev_mrr: number
+      companies: Array<{ id: string; name: string; mrr_lost: number }>
+    }>
+    annual: Array<{
+      year: number
+      logo_churn_rate: number
+      revenue_churn_rate: number
+      churned_count: number
+      churned_mrr: number
+      avg_churned_mrr: number
+      companies: Array<{ id: string; name: string; mrr_lost: number; month: string }>
+    }>
+  }> {
+    const [{ data: churnEvents }, { data: ledgerRows }] = await Promise.all([
+      supabase
+        .from('revenue_events')
+        .select('company_id, month, mrr_impact, companies(id, name)')
+        .eq('tenant_id', tenantId)
+        .eq('event_type', 'CHURN')
+        .order('month', { ascending: true }),
+      supabase
+        .from('revenue_ledger')
+        .select('month, company_id, amount_reporting')
+        .eq('tenant_id', tenantId)
+        .order('month', { ascending: true }),
+    ])
+
+    if (!churnEvents || churnEvents.length === 0) return { monthly: [], annual: [] }
+
+    // Build MRR per month and active customers per month
+    const mrrByMonth: Record<string, number> = {}
+    const activeByMonth: Record<string, Set<string>> = {}
+    for (const row of ledgerRows || []) {
+      const m = row.month
+      mrrByMonth[m] = (mrrByMonth[m] || 0) + Number(row.amount_reporting)
+      if (!activeByMonth[m]) activeByMonth[m] = new Set()
+      if (Number(row.amount_reporting) > 0) activeByMonth[m].add(row.company_id)
+    }
+
+    // Group churn events by month
+    const churnByMonth: Record<string, Array<{ id: string; name: string; mrr_lost: number }>> = {}
+    for (const ev of churnEvents) {
+      const m = ev.month
+      if (!churnByMonth[m]) churnByMonth[m] = []
+      const company = ev.companies as any
+      churnByMonth[m].push({
+        id: company?.id || ev.company_id,
+        name: company?.name || 'Unknown',
+        mrr_lost: round(Number(ev.mrr_impact)),
+      })
+    }
+
+    // Get last N months that have churn data
+    const allMonths = [...new Set([...Object.keys(mrrByMonth), ...Object.keys(churnByMonth)])].sort()
+    const recentMonths = allMonths.slice(-months)
+
+    const monthly = recentMonths.map((month) => {
+      const prevMonth = getPrevMonth(month)
+      const prevMrr = mrrByMonth[prevMonth] || 0
+      const prevActiveCount = activeByMonth[prevMonth]?.size || 0
+      const companies = churnByMonth[month] || []
+      const churned_mrr = companies.reduce((s, c) => s + c.mrr_lost, 0)
+      const churned_count = companies.length
+      const logo_churn_rate = prevActiveCount > 0 ? round((churned_count / prevActiveCount) * 100) : 0
+      const revenue_churn_rate = prevMrr > 0 ? round((Math.abs(churned_mrr) / prevMrr) * 100) : 0
+
+      return {
+        month,
+        logo_churn_rate,
+        revenue_churn_rate,
+        churned_count,
+        churned_mrr: round(churned_mrr),
+        prev_active_count: prevActiveCount,
+        prev_mrr: round(prevMrr),
+        companies,
+      }
+    }).filter(m => m.churned_count > 0 || mrrByMonth[m.month])
+
+    // Aggregate annual
+    const annualMap: Record<number, {
+      churned_count: number
+      churned_mrr: number
+      start_active: number
+      start_mrr: number
+      companies: Array<{ id: string; name: string; mrr_lost: number; month: string }>
+    }> = {}
+
+    for (const m of monthly) {
+      const year = parseInt(m.month.slice(0, 4))
+      if (!annualMap[year]) annualMap[year] = { churned_count: 0, churned_mrr: 0, start_active: 0, start_mrr: 0, companies: [] }
+      annualMap[year].churned_count += m.churned_count
+      annualMap[year].churned_mrr += m.churned_mrr
+      annualMap[year].companies.push(...m.companies.map(c => ({ ...c, month: m.month })))
+
+      // Use Jan of the year as the start baseline for annual churn rate
+      if (m.month.slice(5, 7) === '01') {
+        annualMap[year].start_active = m.prev_active_count
+        annualMap[year].start_mrr = m.prev_mrr
+      }
+    }
+
+    const annual = Object.entries(annualMap)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([yearStr, data]) => {
+        const year = Number(yearStr)
+        const logo_churn_rate = data.start_active > 0
+          ? round((data.churned_count / data.start_active) * 100)
+          : 0
+        const revenue_churn_rate = data.start_mrr > 0
+          ? round((Math.abs(data.churned_mrr) / data.start_mrr) * 100)
+          : 0
+        const avg_churned_mrr = data.churned_count > 0
+          ? round(Math.abs(data.churned_mrr) / data.churned_count)
+          : 0
+        return {
+          year,
+          logo_churn_rate,
+          revenue_churn_rate,
+          churned_count: data.churned_count,
+          churned_mrr: round(data.churned_mrr),
+          avg_churned_mrr,
+          companies: data.companies,
+        }
+      })
+
+    return { monthly: monthly.filter(m => m.churned_count > 0), annual }
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

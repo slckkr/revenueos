@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, ChevronLeft, ChevronRight, Users2, Lock, ExternalLink, TrendingDown, ShieldAlert } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, ChevronRight, Users2, Lock, ExternalLink, TrendingDown, ShieldAlert, X, TrendingUp as ChurnIcon } from 'lucide-react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
 import { formatCurrency, formatPercent, getNrrColor } from '@/lib/formatters'
@@ -11,9 +11,12 @@ import { MRRChart } from '@/components/dashboard/MRRChart'
 import { NetNewMRRChart } from '@/components/dashboard/NetNewMRRChart'
 import { MRRBridgeChart } from '@/components/dashboard/MRRBridgeChart'
 
+type ChurnPeriod = { label: string; logo_churn_rate: number; revenue_churn_rate: number; churned_count: number; churned_mrr: number; avg_churned_mrr?: number; companies: Array<{ id: string; name: string; mrr_lost: number; month?: string }> }
+
 export default function DashboardPage() {
   const [selectedMonth, setSelectedMonth] = useState(getPrevMonth(getCurrentMonth()))
   const [drilldownMetric, setDrilldownMetric] = useState<string | null>(null)
+  const [churnPeriod, setChurnPeriod] = useState<ChurnPeriod | null>(null)
 
   const { data: summaryData, isLoading: summaryLoading } = useQuery({
     queryKey: ['metrics-summary', selectedMonth],
@@ -64,7 +67,14 @@ export default function DashboardPage() {
     staleTime: 300_000,
   })
 
+  const { data: churnRatesData } = useQuery({
+    queryKey: ['churn-rates'],
+    queryFn: () => api.getChurnRates(24),
+    staleTime: 300_000,
+  })
+
   const summary = summaryData?.data
+  const churnRates = churnRatesData?.data
   const history = historyData?.data || []
   const anomalies = anomaliesData?.data || []
   const churnRisks = churnRiskData?.data || []
@@ -306,6 +316,150 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Churn Analysis */}
+      {churnRates && (churnRates.monthly.length > 0 || churnRates.annual.length > 0) && (
+        <div className="card space-y-4">
+          <div className="flex items-center gap-2">
+            <ChurnIcon className="w-4 h-4 text-churn-red" />
+            <h2 className="font-semibold text-text-primary">Churn Analysis</h2>
+            <span className="text-xs text-text-muted ml-auto">Click a row to see churned companies</span>
+          </div>
+
+          {/* Annual */}
+          {churnRates.annual.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">Annual</p>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="table-header text-left">Year</th>
+                    <th className="table-header text-right">Logo Churn</th>
+                    <th className="table-header text-right">Revenue Churn</th>
+                    <th className="table-header text-right">Churned</th>
+                    <th className="table-header text-right">MRR Lost</th>
+                    <th className="table-header text-right">Avg MRR/Customer</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {churnRates.annual.map((a) => (
+                    <tr
+                      key={a.year}
+                      onClick={() => setChurnPeriod(churnPeriod?.label === String(a.year) ? null : { label: String(a.year), logo_churn_rate: a.logo_churn_rate, revenue_churn_rate: a.revenue_churn_rate, churned_count: a.churned_count, churned_mrr: a.churned_mrr, avg_churned_mrr: a.avg_churned_mrr, companies: a.companies })}
+                      className={`border-b border-border cursor-pointer transition-colors ${churnPeriod?.label === String(a.year) ? 'bg-red-950/30' : 'hover:bg-surface'}`}
+                    >
+                      <td className="table-cell font-medium text-sm">{a.year}</td>
+                      <td className="table-cell text-right">
+                        <span className={`text-sm font-semibold ${a.logo_churn_rate > 5 ? 'text-churn-red' : a.logo_churn_rate > 2 ? 'text-amber-400' : 'text-mrr-green'}`}>
+                          {a.logo_churn_rate.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="table-cell text-right">
+                        <span className={`text-sm font-semibold ${a.revenue_churn_rate > 5 ? 'text-churn-red' : a.revenue_churn_rate > 2 ? 'text-amber-400' : 'text-mrr-green'}`}>
+                          {a.revenue_churn_rate.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="table-cell text-right text-sm text-text-secondary">{a.churned_count}</td>
+                      <td className="table-cell text-right text-sm text-churn-red font-medium">{formatCurrency(Math.abs(a.churned_mrr), 'USD', true)}</td>
+                      <td className="table-cell text-right text-sm text-text-secondary">{formatCurrency(a.avg_churned_mrr, 'USD', true)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Monthly */}
+          {churnRates.monthly.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">Monthly (last 24 months)</p>
+              <div className="overflow-x-auto max-h-72 overflow-y-auto">
+                <table className="w-full">
+                  <thead className="sticky top-0 bg-card z-10">
+                    <tr className="border-b border-border">
+                      <th className="table-header text-left">Month</th>
+                      <th className="table-header text-right">Logo Churn</th>
+                      <th className="table-header text-right">Revenue Churn</th>
+                      <th className="table-header text-right">Churned</th>
+                      <th className="table-header text-right">MRR Lost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...churnRates.monthly].reverse().map((m) => (
+                      <tr
+                        key={m.month}
+                        onClick={() => setChurnPeriod(churnPeriod?.label === m.month ? null : { label: m.month, logo_churn_rate: m.logo_churn_rate, revenue_churn_rate: m.revenue_churn_rate, churned_count: m.churned_count, churned_mrr: m.churned_mrr, companies: m.companies })}
+                        className={`border-b border-border cursor-pointer transition-colors ${churnPeriod?.label === m.month ? 'bg-red-950/30' : 'hover:bg-surface'}`}
+                      >
+                        <td className="table-cell text-sm font-medium">{formatMonthLabel(m.month)}</td>
+                        <td className="table-cell text-right">
+                          <span className={`text-sm font-semibold ${m.logo_churn_rate > 5 ? 'text-churn-red' : m.logo_churn_rate > 2 ? 'text-amber-400' : 'text-mrr-green'}`}>
+                            {m.logo_churn_rate.toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="table-cell text-right">
+                          <span className={`text-sm font-semibold ${m.revenue_churn_rate > 5 ? 'text-churn-red' : m.revenue_churn_rate > 2 ? 'text-amber-400' : 'text-mrr-green'}`}>
+                            {m.revenue_churn_rate.toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="table-cell text-right text-sm text-text-secondary">{m.churned_count}</td>
+                        <td className="table-cell text-right text-sm text-churn-red font-medium">{formatCurrency(Math.abs(m.churned_mrr), 'USD', true)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Drill-down panel */}
+          {churnPeriod && (
+            <div className="border border-border rounded-lg p-4 space-y-3 bg-surface">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-text-primary">
+                    Churned Companies — {churnPeriod.label}
+                  </p>
+                  <div className="flex items-center gap-4 mt-1">
+                    <span className="text-xs text-text-muted">Logo Churn: <span className="text-churn-red font-medium">{churnPeriod.logo_churn_rate.toFixed(1)}%</span></span>
+                    <span className="text-xs text-text-muted">Revenue Churn: <span className="text-churn-red font-medium">{churnPeriod.revenue_churn_rate.toFixed(1)}%</span></span>
+                    <span className="text-xs text-text-muted">Total Lost: <span className="text-churn-red font-medium">{formatCurrency(Math.abs(churnPeriod.churned_mrr), 'USD', true)}</span></span>
+                    {churnPeriod.avg_churned_mrr && (
+                      <span className="text-xs text-text-muted">Avg / Customer: <span className="text-text-secondary font-medium">{formatCurrency(churnPeriod.avg_churned_mrr, 'USD', true)}</span></span>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => setChurnPeriod(null)} className="text-text-muted hover:text-text-primary p-1">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {churnPeriod.companies.length === 0 ? (
+                <p className="text-sm text-text-muted text-center py-4">No churned companies found.</p>
+              ) : (
+                <div className="space-y-1 max-h-56 overflow-y-auto">
+                  {churnPeriod.companies
+                    .sort((a, b) => a.mrr_lost - b.mrr_lost)
+                    .map((c, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm py-1.5 border-b border-border last:border-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Link href={`/companies/${c.id}`} className="text-text-secondary hover:text-mrr-green truncate transition-colors">
+                            {c.name}
+                          </Link>
+                          {c.month && (
+                            <span className="text-xs text-text-muted flex-shrink-0">({formatMonthLabel(c.month)})</span>
+                          )}
+                        </div>
+                        <span className="text-churn-red font-medium flex-shrink-0 ml-4">
+                          {formatCurrency(c.mrr_lost, 'USD', true)}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

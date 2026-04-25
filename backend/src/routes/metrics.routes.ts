@@ -65,6 +65,14 @@ router.get('/:key/drilldown', asyncHandler(async (req: Request, res: Response) =
   res.json({ success: true, data })
 }))
 
+// GET /metrics/churn-rates?months=24
+router.get('/churn-rates', asyncHandler(async (req: Request, res: Response) => {
+  const tenantId = req.user!.tenantId
+  const months = parseInt((req.query.months as string) || '24', 10)
+  const data = await metricsService.getChurnRates(tenantId, months)
+  res.json({ success: true, data })
+}))
+
 // GET /metrics/anomalies — rule-based flags
 router.get('/anomalies', asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.tenantId
