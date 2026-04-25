@@ -141,6 +141,8 @@ export const api = {
     fetchJSON<{ success: true; data: Company }>(`/companies/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteCompany: (id: string) =>
     fetchJSON<{ success: true }>(`/companies/${id}`, { method: 'DELETE' }),
+  bulkDeleteCompanies: (ids: string[]) =>
+    fetchJSON<{ success: true; deleted: number }>('/companies/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   // Ledger
   getLedger: (params?: { month?: string; company_id?: string; event_type?: string; page?: number }) => {
@@ -160,6 +162,8 @@ export const api = {
     fetchJSON<{ success: true; data: LedgerEntry }>(`/ledger/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteLedgerEntry: (id: string) =>
     fetchJSON<{ success: true }>(`/ledger/${id}`, { method: 'DELETE' }),
+  bulkDeleteLedger: (ids: string[]) =>
+    fetchJSON<{ success: true; deleted: number }>('/ledger/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   rebuildLedger: (from_month: string, to_month: string) =>
     fetchJSON('/ledger/rebuild', {
@@ -205,6 +209,8 @@ export const api = {
     fetchJSON<{ success: true; data: Product }>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteProduct: (id: string) =>
     fetchJSON<{ success: true }>(`/products/${id}`, { method: 'DELETE' }),
+  bulkDeleteProducts: (ids: string[]) =>
+    fetchJSON<{ success: true; deleted: number }>('/products/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   // Contacts
   getContacts: (params?: { company_id?: string; page?: number; limit?: number }) => {
@@ -262,6 +268,8 @@ export const api = {
     fetchJSON<{ success: true; data: RevenueEvent }>(`/revenue-events/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteRevenueEvent: (id: string) =>
     fetchJSON<{ success: true }>(`/revenue-events/${id}`, { method: 'DELETE' }),
+  bulkDeleteRevenueEvents: (ids: string[]) =>
+    fetchJSON<{ success: true; deleted: number }>('/revenue-events/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   // Phase 2: MRR Bridge
   getMrrBridge: (month?: string) =>
@@ -380,6 +388,8 @@ export const api = {
     fetchJSON<{ success: true; data: Deal }>(`/deals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteDeal: (id: string) =>
     fetchJSON<{ success: true }>(`/deals/${id}`, { method: 'DELETE' }),
+  bulkDeleteDeals: (ids: string[]) =>
+    fetchJSON<{ success: true; deleted: number }>('/deals/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   // Phase 4: Proposals
   getProposals: (params?: { company_id?: string; status?: string; page?: number }) => {
@@ -395,6 +405,8 @@ export const api = {
     fetchJSON<{ success: true; data: Proposal }>(`/proposals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteProposal: (id: string) =>
     fetchJSON<{ success: true }>(`/proposals/${id}`, { method: 'DELETE' }),
+  bulkDeleteProposals: (ids: string[]) =>
+    fetchJSON<{ success: true; deleted: number }>('/proposals/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   // Phase 4: Contracts
   getContracts: (params?: { company_id?: string; status?: string; page?: number }) => {
@@ -412,6 +424,8 @@ export const api = {
     fetchJSON<{ success: true; data: Contract }>(`/contracts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteContract: (id: string) =>
     fetchJSON<{ success: true }>(`/contracts/${id}`, { method: 'DELETE' }),
+  bulkDeleteContracts: (ids: string[]) =>
+    fetchJSON<{ success: true; deleted: number }>('/contracts/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   // Phase 4: Activities
   getActivities: (params?: { company_id?: string; deal_id?: string; type?: string; page?: number }) => {
@@ -426,6 +440,8 @@ export const api = {
     fetchJSON<{ success: true; data: ActivityItem }>('/activities', { method: 'POST', body: JSON.stringify(data) }),
   deleteActivity: (id: string) =>
     fetchJSON<{ success: true }>(`/activities/${id}`, { method: 'DELETE' }),
+  bulkDeleteActivities: (ids: string[]) =>
+    fetchJSON<{ success: true; deleted: number }>('/activities/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   // Phase 4: Funnel
   getFunnelStages: () =>

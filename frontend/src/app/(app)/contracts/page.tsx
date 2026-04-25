@@ -45,6 +45,8 @@ export default function ContractsPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [formError, setFormError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Contract | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['contracts', statusFilter],
@@ -85,6 +87,12 @@ export default function ContractsPage() {
     mutationFn: (id: string) => api.deleteContract(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['contracts'] }); setDeleteTarget(null) },
   })
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.bulkDeleteContracts(ids),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contracts'] }); setSelectedIds(new Set()); setBulkDeleteOpen(false) },
+  })
+  function toggleSelect(id: string) { setSelectedIds((p) => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s }) }
+  function toggleSelectAll() { const list = tab === 'all' ? contracts : upcoming; setSelectedIds(selectedIds.size === list.length && list.length > 0 ? new Set() : new Set(list.map((c) => c.id))) }
 
   function openCreate() { setEditTarget(null); setForm(EMPTY_FORM); setFormError(''); setFormOpen(true) }
   function openEdit(c: Contract) {
@@ -127,9 +135,16 @@ export default function ContractsPage() {
           <h1 className="text-xl font-bold text-text-primary">Contracts & Renewals</h1>
           <p className="text-text-secondary text-sm mt-0.5">{tab === 'upcoming' ? `${upcoming.length} renewing within 60 days` : `${total} contracts`}</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-2 bg-mrr-green text-black text-sm font-medium px-3 py-1.5 rounded hover:bg-emerald-400 transition-colors">
-          <Plus className="w-4 h-4" /> New Contract
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button onClick={() => setBulkDeleteOpen(true)} className="flex items-center gap-2 bg-churn-red text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-red-600 transition-colors">
+              <Trash2 className="w-4 h-4" /> Delete ({selectedIds.size})
+            </button>
+          )}
+          <button onClick={openCreate} className="flex items-center gap-2 bg-mrr-green text-black text-sm font-medium px-3 py-1.5 rounded hover:bg-emerald-400 transition-colors">
+            <Plus className="w-4 h-4" /> New Contract
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-3 items-center">
@@ -152,6 +167,7 @@ export default function ContractsPage() {
         <table className="w-full">
           <thead className="border-b border-border">
             <tr>
+              <th className="table-header w-10"><input type="checkbox" className="rounded" checked={selectedIds.size === displayList.length && displayList.length > 0} onChange={toggleSelectAll} /></th>
               <th className="table-header">Contract</th>
               <th className="table-header">Company</th>
               <th className="table-header">Status</th>
@@ -167,12 +183,12 @@ export default function ContractsPage() {
             {isLoading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="border-b border-border">
-                  <td colSpan={9} className="table-cell"><div className="h-4 bg-surface rounded animate-pulse w-full" /></td>
+                  <td colSpan={10} className="table-cell"><div className="h-4 bg-surface rounded animate-pulse w-full" /></td>
                 </tr>
               ))
             ) : displayList.length === 0 ? (
               <tr>
-                <td colSpan={9} className="table-cell text-center text-text-secondary py-12">
+                <td colSpan={10} className="table-cell text-center text-text-secondary py-12">
                   <FileSignature className="w-8 h-8 mx-auto mb-2 opacity-30" />
                   {tab === 'upcoming' ? 'No renewals in the next 60 days' : 'No contracts found'}
                 </td>
@@ -182,7 +198,8 @@ export default function ContractsPage() {
                 const days = daysUntil(c.end_date)
                 const isExpiringSoon = days <= 30
                 return (
-                  <tr key={c.id} className="border-b border-border hover:bg-surface transition-colors group">
+                  <tr key={c.id} className={`border-b border-border hover:bg-surface transition-colors group ${selectedIds.has(c.id) ? 'bg-surface' : ''}`}>
+                    <td className="table-cell w-10"><input type="checkbox" className="rounded" checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)} /></td>
                     <td className="table-cell">
                       <div>
                         <p className="text-sm font-medium">{c.contract_number || 'Unnamed'}</p>
@@ -299,6 +316,14 @@ export default function ContractsPage() {
         title="Delete Contract"
         message={`Delete contract "${deleteTarget?.contract_number || deleteTarget?.title || ''}"? This cannot be undone.`}
         loading={deleteMutation.isPending}
+      />
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
+        title="Delete Selected Contracts"
+        message={`Delete ${selectedIds.size} selected contracts? This cannot be undone.`}
+        loading={bulkDeleteMutation.isPending}
       />
     </div>
   )

@@ -38,6 +38,8 @@ export default function LedgerPage() {
   const [newForm, setNewForm] = useState<NewForm>(EMPTY_NEW)
   const [newError, setNewError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<LedgerRow | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const { data: companiesData } = useQuery({
     queryKey: ['companies-list'],
@@ -71,6 +73,12 @@ export default function LedgerPage() {
     mutationFn: (id: string) => api.deleteLedgerEntry(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ledger'] }); setDeleteTarget(null) },
   })
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.bulkDeleteLedger(ids),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ledger'] }); setSelectedIds(new Set()); setBulkDeleteOpen(false) },
+  })
+  function toggleSelect(id: string) { setSelectedIds((p) => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s }) }
+  function toggleSelectAll() { setSelectedIds(selectedIds.size === entries.length && entries.length > 0 ? new Set() : new Set(entries.map((e) => e.id))) }
 
   const createMutation = useMutation({
     mutationFn: (f: NewForm) => api.createLedgerEntry({
@@ -111,12 +119,19 @@ export default function LedgerPage() {
           <h1 className="text-xl font-bold text-text-primary">Revenue Ledger</h1>
           <p className="text-text-secondary text-sm mt-0.5">{total} entries</p>
         </div>
-        <button
-          onClick={() => { setNewOpen(true); setNewForm(EMPTY_NEW); setNewError('') }}
-          className="flex items-center gap-2 bg-mrr-green text-black text-sm font-medium px-3 py-1.5 rounded hover:bg-emerald-400 transition-colors"
-        >
-          <Plus className="w-4 h-4" /> New Entry
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button onClick={() => setBulkDeleteOpen(true)} className="flex items-center gap-2 bg-churn-red text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-red-600 transition-colors">
+              <Trash2 className="w-4 h-4" /> Delete ({selectedIds.size})
+            </button>
+          )}
+          <button
+            onClick={() => { setNewOpen(true); setNewForm(EMPTY_NEW); setNewError('') }}
+            className="flex items-center gap-2 bg-mrr-green text-black text-sm font-medium px-3 py-1.5 rounded hover:bg-emerald-400 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> New Entry
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -137,6 +152,7 @@ export default function LedgerPage() {
         <table className="w-full">
           <thead className="border-b border-border">
             <tr>
+              <th className="table-header w-10"><input type="checkbox" className="rounded" checked={selectedIds.size === entries.length && entries.length > 0} onChange={toggleSelectAll} /></th>
               <th className="table-header">Month</th>
               <th className="table-header">Company</th>
               <th className="table-header">Product</th>
@@ -152,12 +168,12 @@ export default function LedgerPage() {
             {isLoading ? (
               Array.from({ length: 10 }).map((_, i) => (
                 <tr key={i} className="border-b border-border">
-                  <td colSpan={9} className="table-cell"><div className="h-4 bg-surface rounded animate-pulse w-full" /></td>
+                  <td colSpan={10} className="table-cell"><div className="h-4 bg-surface rounded animate-pulse w-full" /></td>
                 </tr>
               ))
             ) : entries.length === 0 ? (
               <tr>
-                <td colSpan={9} className="table-cell text-center text-text-secondary py-12">
+                <td colSpan={10} className="table-cell text-center text-text-secondary py-12">
                   No ledger entries. Import invoices or run a HubSpot sync, then rebuild the ledger.
                 </td>
               </tr>
@@ -165,6 +181,7 @@ export default function LedgerPage() {
               entries.map((entry) =>
                 editId === entry.id ? (
                   <tr key={entry.id} className="border-b border-border bg-surface">
+                    <td className="table-cell w-10" />
                     <td className="table-cell text-sm text-text-secondary">{formatMonth(entry.month)}</td>
                     <td className="table-cell text-sm">{entry.companies?.name || '—'}</td>
                     <td className="table-cell text-sm text-text-muted">{entry.products?.name || '—'}</td>
@@ -200,7 +217,8 @@ export default function LedgerPage() {
                     </td>
                   </tr>
                 ) : (
-                  <tr key={entry.id} className="border-b border-border hover:bg-surface transition-colors group">
+                  <tr key={entry.id} className={`border-b border-border hover:bg-surface transition-colors group ${selectedIds.has(entry.id) ? 'bg-surface' : ''}`}>
+                    <td className="table-cell w-10"><input type="checkbox" className="rounded" checked={selectedIds.has(entry.id)} onChange={() => toggleSelect(entry.id)} /></td>
                     <td className="table-cell text-text-secondary">{formatMonth(entry.month)}</td>
                     <td className="table-cell font-medium">{entry.companies?.name || '—'}</td>
                     <td className="table-cell text-text-secondary">{entry.products?.name || '—'}</td>
@@ -307,6 +325,14 @@ export default function LedgerPage() {
         title="Delete Ledger Entry"
         message={`Delete this ${deleteTarget?.event_type} entry for ${deleteTarget?.companies?.name || 'this company'} (${formatMonth(deleteTarget?.month || '')})?`}
         loading={deleteMutation.isPending}
+      />
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
+        title="Delete Selected Ledger Entries"
+        message={`Delete ${selectedIds.size} selected entries? This cannot be undone.`}
+        loading={bulkDeleteMutation.isPending}
       />
     </div>
   )

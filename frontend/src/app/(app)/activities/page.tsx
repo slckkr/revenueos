@@ -55,6 +55,8 @@ export default function ActivitiesPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [formError, setFormError] = useState('')
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['activities', typeFilter, companyFilter],
@@ -87,6 +89,12 @@ export default function ActivitiesPage() {
     mutationFn: (id: string) => api.deleteActivity(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['activities'] }); setDeleteTargetId(null) },
   })
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.bulkDeleteActivities(ids),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['activities'] }); setSelectedIds(new Set()); setBulkDeleteOpen(false) },
+  })
+  function toggleSelect(id: string) { setSelectedIds((p) => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s }) }
+  function toggleSelectAll() { setSelectedIds(selectedIds.size === activities.length && activities.length > 0 ? new Set() : new Set(activities.map((a) => a.id))) }
 
   function openCreate() { setForm(EMPTY_FORM); setFormError(''); setFormOpen(true) }
   function closeForm() { setFormOpen(false); setForm(EMPTY_FORM); setFormError('') }
@@ -112,9 +120,16 @@ export default function ActivitiesPage() {
           <h1 className="text-xl font-bold text-text-primary">Activities</h1>
           <p className="text-text-secondary text-sm mt-0.5">{total} activities</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-2 bg-mrr-green text-black text-sm font-medium px-3 py-1.5 rounded hover:bg-emerald-400 transition-colors">
-          <Plus className="w-4 h-4" /> Log Activity
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button onClick={() => setBulkDeleteOpen(true)} className="flex items-center gap-2 bg-churn-red text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-red-600 transition-colors">
+              <Trash2 className="w-4 h-4" /> Delete ({selectedIds.size})
+            </button>
+          )}
+          <button onClick={openCreate} className="flex items-center gap-2 bg-mrr-green text-black text-sm font-medium px-3 py-1.5 rounded hover:bg-emerald-400 transition-colors">
+            <Plus className="w-4 h-4" /> Log Activity
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-3 flex-wrap">
@@ -151,8 +166,9 @@ export default function ActivitiesPage() {
           activities.map((act) => {
             const colorClass = TYPE_COLORS[act.type] || 'text-text-muted bg-surface'
             return (
-              <div key={act.id} className="card p-4 group hover:border-border transition-all">
+              <div key={act.id} className={`card p-4 group hover:border-border transition-all ${selectedIds.has(act.id) ? 'border-mrr-green/30' : ''}`}>
                 <div className="flex items-start gap-3">
+                  <input type="checkbox" className="rounded mt-1 shrink-0" checked={selectedIds.has(act.id)} onChange={() => toggleSelect(act.id)} />
                   <div className={`p-2 rounded-lg ${colorClass} shrink-0 mt-0.5`}>
                     {TYPE_ICONS[act.type] || <FileText className="w-3.5 h-3.5" />}
                   </div>
@@ -248,6 +264,14 @@ export default function ActivitiesPage() {
         title="Delete Activity"
         message="Delete this activity? This cannot be undone."
         loading={deleteMutation.isPending}
+      />
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
+        title="Delete Selected Activities"
+        message={`Delete ${selectedIds.size} selected activities? This cannot be undone.`}
+        loading={bulkDeleteMutation.isPending}
       />
     </div>
   )

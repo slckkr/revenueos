@@ -101,6 +101,16 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
   res.json({ success: true, data })
 }))
 
+// DELETE /revenue-events/bulk
+router.delete('/bulk', asyncHandler(async (req: Request, res: Response) => {
+  const tenantId = req.user!.tenantId
+  const { ids } = req.body
+  if (!Array.isArray(ids) || ids.length === 0) throw new AppError('ids array required', 400, 'VALIDATION_ERROR')
+  const { error } = await supabase.from('revenue_events').delete().in('id', ids).eq('tenant_id', tenantId)
+  if (error) throw new AppError(error.message, 500, 'DB_ERROR')
+  res.json({ success: true, deleted: ids.length })
+}))
+
 // DELETE /revenue-events/:id
 router.delete('/:id', asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.tenantId

@@ -208,31 +208,16 @@ class ImportExcelService {
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
 
       if (rows.length === 0) {
-        await supabase
-          .from('import_files')
-          .update({ status: 'error', errors_json: [{ message: 'File is empty or has no data rows' }] })
-          .eq('id', fileId)
+        await supabase.from('import_files').update({ status: 'error', errors_json: [{ message: 'File is empty or has no data rows' }] }).eq('id', fileId)
         return { file_id: fileId, records_imported: 0, skipped_duplicates: 0, overwritten_duplicates: 0, errors: [{ row: 0, message: 'File is empty or has no data rows' }] }
       }
 
-      // Detect column mapping from actual headers
       const headers = Object.keys(rows[0])
       const mapping = resolveMapping(headers, providedMapping)
       detectedColumns = mapping._detected
 
-      logger.info('Excel import column detection', {
-        filename,
-        headers,
-        resolved: {
-          company: mapping.company_name_col,
-          invoice: mapping.invoice_number_col,
-          date: mapping.issue_date_col,
-          amount: mapping.amount_col,
-          currency: mapping.currency_col,
-        },
-      })
+      logger.info('Excel import column detection', { filename, headers, resolved: { company: mapping.company_name_col, invoice: mapping.invoice_number_col, date: mapping.issue_date_col, amount: mapping.amount_col } })
 
-      // If required columns not found, fail early with helpful message
       const missing: string[] = []
       if (!mapping.company_name_col) missing.push('Company name column')
       if (!mapping.invoice_number_col) missing.push('Invoice number column')
@@ -241,158 +226,160 @@ class ImportExcelService {
 
       if (missing.length > 0) {
         const msg = `Could not find required columns: ${missing.join(', ')}. Detected headers: [${headers.join(', ')}]. Expected names like: Company, Invoice No, Date, Amount (or Turkish equivalents)`
-        await supabase
-          .from('import_files')
-          .update({ status: 'error', errors_json: [{ message: msg }] })
-          .eq('id', fileId)
+        await supabase.from('import_files').update({ status: 'error', errors_json: [{ message: msg }] }).eq('id', fileId)
         return { file_id: fileId, records_imported: 0, skipped_duplicates: 0, overwritten_duplicates: 0, errors: [{ row: 0, message: msg }] }
       }
 
+      // ── BATCH STEP 1: Parse all rows upfront ────────────────────────────────
+      type ParsedRow = {
+        rowNum: number
+        companyName: string
+        productName: string | null
+        invoiceNumber: string
+        issueDate: string
+        amount: number
+        currency: string
+        serviceStart: string | null
+        serviceEnd: string | null
+      }
+      const parsed: ParsedRow[] = []
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i]
         const rowNum = i + 2
+        const companyName   = String(getCol(row, mapping.company_name_col)   || '').trim()
+        const invoiceNumber = String(getCol(row, mapping.invoice_number_col) || '').trim()
+        const issueDate     = parseDate(getCol(row, mapping.issue_date_col))
+        const amount        = parseAmount(getCol(row, mapping.amount_col))
+        const currency      = String(getCol(row, mapping.currency_col) || 'USD').trim().toUpperCase() || 'USD'
+        const serviceStart  = parseDate(getCol(row, mapping.service_start_col))
+        const serviceEnd    = parseDate(getCol(row, mapping.service_end_col))
+        const productName   = String(getCol(row, mapping.product_col) || '').trim() || null
 
-        try {
-          const companyName   = String(getCol(row, mapping.company_name_col)   || '').trim()
-          const invoiceNumber = String(getCol(row, mapping.invoice_number_col) || '').trim()
-          const issueDate     = parseDate(getCol(row, mapping.issue_date_col))
-          const amount        = parseAmount(getCol(row, mapping.amount_col))
-          const currency      = String(getCol(row, mapping.currency_col) || 'USD').trim().toUpperCase() || 'USD'
-          const serviceStart  = parseDate(getCol(row, mapping.service_start_col))
-          const serviceEnd    = parseDate(getCol(row, mapping.service_end_col))
-          const productName   = String(getCol(row, mapping.product_col) || '').trim() || null
+        if (!companyName)                { errors.push({ row: rowNum, message: `Row ${rowNum}: Company name is empty` }); continue }
+        if (!invoiceNumber)              { errors.push({ row: rowNum, message: `Row ${rowNum}: Invoice number is empty` }); continue }
+        if (!issueDate)                  { errors.push({ row: rowNum, message: `Row ${rowNum}: Invalid date "${getCol(row, mapping.issue_date_col)}"` }); continue }
+        if (isNaN(amount) || amount <= 0){ errors.push({ row: rowNum, message: `Row ${rowNum}: Invalid amount "${getCol(row, mapping.amount_col)}"` }); continue }
+        parsed.push({ rowNum, companyName, productName, invoiceNumber, issueDate, amount, currency, serviceStart, serviceEnd })
+      }
 
-          if (!companyName)                { errors.push({ row: rowNum, message: `Row ${rowNum}: Company name is empty` }); continue }
-          if (!invoiceNumber)              { errors.push({ row: rowNum, message: `Row ${rowNum}: Invoice number is empty` }); continue }
-          if (!issueDate)                  { errors.push({ row: rowNum, message: `Row ${rowNum}: Invalid date "${getCol(row, mapping.issue_date_col)}"` }); continue }
-          if (isNaN(amount) || amount <= 0){ errors.push({ row: rowNum, message: `Row ${rowNum}: Invalid amount "${getCol(row, mapping.amount_col)}"` }); continue }
+      if (parsed.length === 0) {
+        await supabase.from('import_files').update({ status: 'error', errors_json: errors }).eq('id', fileId)
+        return { file_id: fileId, records_imported: 0, skipped_duplicates: 0, overwritten_duplicates: 0, errors, detected_columns: detectedColumns }
+      }
 
-          const companyId = await this.upsertCompany(tenantId, companyName)
+      // ── BATCH STEP 2: Resolve companies in bulk ──────────────────────────────
+      const uniqueCompanyNames = [...new Set(parsed.map((r) => r.companyName.toLowerCase()))]
+      const companyMap = await this.batchUpsertCompanies(tenantId, uniqueCompanyNames, parsed.map((r) => r.companyName))
 
-          let productId: string | null = null
-          if (productName) {
-            productId = await this.upsertProduct(tenantId, productName)
-          }
+      // ── BATCH STEP 3: Resolve products in bulk ───────────────────────────────
+      const uniqueProductNames = [...new Set(parsed.filter((r) => r.productName).map((r) => r.productName!.toLowerCase()))]
+      const productMap = await this.batchUpsertProducts(tenantId, uniqueProductNames, parsed.filter((r) => r.productName).map((r) => r.productName!))
 
-          const invoicePayload = {
-            tenant_id: tenantId,
-            company_id: companyId,
-            invoice_number: invoiceNumber,
-            issue_date: issueDate,
-            service_period_start: serviceStart,
-            service_period_end: serviceEnd || serviceStart,
-            total_amount: amount,
-            currency,
-            status: 'issued',
-            source_type: 'excel_import',
-            import_file_id: fileId,
-          }
+      // ── BATCH STEP 4: Check existing invoices in bulk ────────────────────────
+      const allInvoiceNumbers = parsed.map((r) => r.invoiceNumber)
+      const { data: existingInvoices } = await supabase
+        .from('invoices')
+        .select('id, invoice_number')
+        .eq('tenant_id', tenantId)
+        .in('invoice_number', allInvoiceNumbers)
 
-          if (conflictMode === 'overwrite') {
-            // Check if it exists first to track the count
-            const { data: existing } = await supabase
-              .from('invoices')
-              .select('id')
-              .eq('tenant_id', tenantId)
-              .eq('invoice_number', invoiceNumber)
-              .single()
+      const existingMap = new Map<string, string>()
+      for (const inv of existingInvoices || []) existingMap.set(inv.invoice_number, inv.id)
 
-            const { error: invErr } = await supabase.from('invoices').upsert(
-              invoicePayload,
-              { onConflict: 'tenant_id,invoice_number' }
-            )
-            if (invErr) {
-              errors.push({ row: rowNum, message: `Row ${rowNum}: DB error — ${invErr.message}` })
-              continue
-            }
-            if (existing?.id) overwrittenDuplicates++
-            else imported++
-          } else {
-            // 'skip' mode — check first, skip if exists
-            const { data: existing } = await supabase
-              .from('invoices')
-              .select('id')
-              .eq('tenant_id', tenantId)
-              .eq('invoice_number', invoiceNumber)
-              .single()
+      // ── BATCH STEP 5: Build invoice payloads ─────────────────────────────────
+      const toInsert: Record<string, unknown>[] = []
+      const toUpsert: Record<string, unknown>[] = []
 
-            if (existing?.id) {
-              skippedDuplicates++
-              continue
-            }
+      for (const r of parsed) {
+        const companyId = companyMap.get(r.companyName.toLowerCase())
+        if (!companyId) { errors.push({ row: r.rowNum, message: `Row ${r.rowNum}: Could not resolve company "${r.companyName}"` }); continue }
 
-            const { error: invErr } = await supabase.from('invoices').insert(invoicePayload)
-            if (invErr) {
-              errors.push({ row: rowNum, message: `Row ${rowNum}: DB error — ${invErr.message}` })
-              continue
-            }
-            imported++
-          }
-        } catch (rowErr: any) {
-          errors.push({ row: rowNum, message: `Row ${rowNum}: ${rowErr.message}` })
+        const productId = r.productName ? productMap.get(r.productName.toLowerCase()) ?? null : null
+        const payload = {
+          tenant_id: tenantId,
+          company_id: companyId,
+          product_id: productId,
+          invoice_number: r.invoiceNumber,
+          issue_date: r.issueDate,
+          service_period_start: r.serviceStart,
+          service_period_end: r.serviceEnd || r.serviceStart,
+          total_amount: r.amount,
+          currency: r.currency,
+          status: 'issued',
+          source_type: 'excel_import',
+          import_file_id: fileId,
+        }
+
+        const existsId = existingMap.get(r.invoiceNumber)
+        if (existsId) {
+          if (conflictMode === 'overwrite') { toUpsert.push(payload); overwrittenDuplicates++ }
+          else skippedDuplicates++
+        } else {
+          toInsert.push(payload)
         }
       }
+
+      // ── BATCH STEP 6: Insert / upsert in chunks of 500 ───────────────────────
+      const CHUNK = 500
+      for (let i = 0; i < toInsert.length; i += CHUNK) {
+        const chunk = toInsert.slice(i, i + CHUNK)
+        const { error: insErr } = await supabase.from('invoices').insert(chunk)
+        if (insErr) errors.push({ row: 0, message: `Batch insert error: ${insErr.message}` })
+        else imported += chunk.length
+      }
+      for (let i = 0; i < toUpsert.length; i += CHUNK) {
+        const chunk = toUpsert.slice(i, i + CHUNK)
+        const { error: upsErr } = await supabase.from('invoices').upsert(chunk, { onConflict: 'tenant_id,invoice_number' })
+        if (upsErr) errors.push({ row: 0, message: `Batch upsert error: ${upsErr.message}` })
+      }
+
     } catch (parseErr: any) {
       logger.error('Excel parse error', parseErr)
-      await supabase
-        .from('import_files')
-        .update({ status: 'error', errors_json: [{ message: parseErr.message }] })
-        .eq('id', fileId)
+      await supabase.from('import_files').update({ status: 'error', errors_json: [{ message: parseErr.message }] }).eq('id', fileId)
       throw parseErr
     }
 
-    const finalStatus = imported === 0 && errors.length > 0 ? 'error'
-      : errors.length > 0 ? 'partial'
-      : 'done'
-
-    await supabase
-      .from('import_files')
-      .update({
-        status: finalStatus,
-        records_imported: imported,
-        errors_json: errors.length > 0 ? errors : null,
-      })
-      .eq('id', fileId)
-
+    const finalStatus = imported === 0 && errors.length > 0 ? 'error' : errors.length > 0 ? 'partial' : 'done'
+    await supabase.from('import_files').update({ status: finalStatus, records_imported: imported, errors_json: errors.length > 0 ? errors : null }).eq('id', fileId)
     return { file_id: fileId, records_imported: imported, skipped_duplicates: skippedDuplicates, overwritten_duplicates: overwrittenDuplicates, errors, detected_columns: detectedColumns }
   }
 
-  private async upsertCompany(tenantId: string, name: string): Promise<string> {
-    const { data: existing } = await supabase
-      .from('companies')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .ilike('name', name)
-      .single()
+  private async batchUpsertCompanies(tenantId: string, lowerNames: string[], originalNames: string[]): Promise<Map<string, string>> {
+    const map = new Map<string, string>()
+    if (lowerNames.length === 0) return map
 
-    if (existing?.id) return existing.id
+    // Fetch all existing companies for this tenant at once
+    const { data: existing } = await supabase.from('companies').select('id, name').eq('tenant_id', tenantId)
+    for (const c of existing || []) map.set(c.name.toLowerCase(), c.id)
 
-    const { data: created } = await supabase
-      .from('companies')
-      .insert({ tenant_id: tenantId, name })
-      .select('id')
-      .single()
-
-    return created!.id
+    // Find which names are new
+    const newNames = [...new Set(originalNames)].filter((n) => !map.has(n.toLowerCase()))
+    if (newNames.length > 0) {
+      const { data: created } = await supabase
+        .from('companies')
+        .insert(newNames.map((name) => ({ tenant_id: tenantId, name })))
+        .select('id, name')
+      for (const c of created || []) map.set(c.name.toLowerCase(), c.id)
+    }
+    return map
   }
 
-  private async upsertProduct(tenantId: string, name: string): Promise<string> {
-    const { data: existing } = await supabase
-      .from('products')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .ilike('name', name)
-      .single()
+  private async batchUpsertProducts(tenantId: string, lowerNames: string[], originalNames: string[]): Promise<Map<string, string>> {
+    const map = new Map<string, string>()
+    if (lowerNames.length === 0) return map
 
-    if (existing?.id) return existing.id
+    const { data: existing } = await supabase.from('products').select('id, name').eq('tenant_id', tenantId)
+    for (const p of existing || []) map.set(p.name.toLowerCase(), p.id)
 
-    const { data: created } = await supabase
-      .from('products')
-      .insert({ tenant_id: tenantId, name, billing_period: 'monthly' })
-      .select('id')
-      .single()
-
-    return created!.id
+    const newNames = [...new Set(originalNames)].filter((n) => !map.has(n.toLowerCase()))
+    if (newNames.length > 0) {
+      const { data: created } = await supabase
+        .from('products')
+        .insert(newNames.map((name) => ({ tenant_id: tenantId, name, billing_period: 'monthly' })))
+        .select('id, name')
+      for (const p of created || []) map.set(p.name.toLowerCase(), p.id)
+    }
+    return map
   }
 }
 

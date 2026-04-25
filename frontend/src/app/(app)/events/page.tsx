@@ -45,6 +45,8 @@ export default function EventsPage() {
   const [editState, setEditState] = useState<EditState>({ event_type: '', mrr_impact: '', prev_mrr: '' })
 
   const [deleteTarget, setDeleteTarget] = useState<RevenueEvent | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['revenue-events', monthFilter, companyFilter, typeFilter, page],
@@ -83,6 +85,12 @@ export default function EventsPage() {
     mutationFn: (id: string) => api.deleteRevenueEvent(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['revenue-events'] }); setDeleteTarget(null) },
   })
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.bulkDeleteRevenueEvents(ids),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['revenue-events'] }); setSelectedIds(new Set()); setBulkDeleteOpen(false) },
+  })
+  function toggleSelect(id: string) { setSelectedIds((p) => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s }) }
+  function toggleSelectAll() { setSelectedIds(selectedIds.size === events.length && events.length > 0 ? new Set() : new Set(events.map((e) => e.id))) }
 
   function openCreate() {
     setForm(EMPTY_FORM); setFormError(''); setFormOpen(true)
@@ -178,6 +186,7 @@ export default function EventsPage() {
         <table className="w-full">
           <thead className="border-b border-border">
             <tr>
+              <th className="table-header w-10"><input type="checkbox" className="rounded" checked={selectedIds.size === events.length && events.length > 0} onChange={toggleSelectAll} /></th>
               <th className="table-header">Month</th>
               <th className="table-header">Company</th>
               <th className="table-header">Product</th>
@@ -188,18 +197,19 @@ export default function EventsPage() {
               <th className="table-header w-24" />
             </tr>
           </thead>
+
           <tbody>
             {isLoading ? (
               Array.from({ length: 10 }).map((_, i) => (
                 <tr key={i} className="border-b border-border">
-                  <td colSpan={8} className="table-cell">
+                  <td colSpan={9} className="table-cell">
                     <div className="h-4 bg-surface rounded animate-pulse w-full" />
                   </td>
                 </tr>
               ))
             ) : events.length === 0 ? (
               <tr>
-                <td colSpan={8} className="table-cell text-center text-text-secondary py-12">
+                <td colSpan={9} className="table-cell text-center text-text-secondary py-12">
                   <TrendingUp className="w-8 h-8 mx-auto mb-2 opacity-30" />
                   No events found. Import data and rebuild the ledger, or add events manually.
                 </td>
@@ -208,7 +218,8 @@ export default function EventsPage() {
               events.map((ev) => {
                 const isEditing = editId === ev.id
                 return (
-                  <tr key={ev.id} className="border-b border-border hover:bg-surface transition-colors group">
+                  <tr key={ev.id} className={`border-b border-border hover:bg-surface transition-colors group ${selectedIds.has(ev.id) ? 'bg-surface' : ''}`}>
+                    <td className="table-cell w-10"><input type="checkbox" className="rounded" checked={selectedIds.has(ev.id)} onChange={() => toggleSelect(ev.id)} /></td>
                     <td className="table-cell font-medium text-sm">{formatMonth(ev.month)}</td>
                     <td className="table-cell text-sm">{ev.companies?.name || ev.company_id}</td>
                     <td className="table-cell text-text-secondary text-sm">{ev.products?.name || '—'}</td>
@@ -360,6 +371,14 @@ export default function EventsPage() {
         title="Delete Event"
         message={`Delete this ${deleteTarget?.event_type} event for ${deleteTarget?.companies?.name || 'this company'}? This action cannot be undone. You can re-derive events by rebuilding the ledger.`}
         loading={deleteMutation.isPending}
+      />
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
+        title="Delete Selected Events"
+        message={`Delete ${selectedIds.size} selected events? This cannot be undone.`}
+        loading={bulkDeleteMutation.isPending}
       />
     </div>
   )

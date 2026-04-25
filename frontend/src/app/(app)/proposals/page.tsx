@@ -37,6 +37,8 @@ export default function ProposalsPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [formError, setFormError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Proposal | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [statusEdit, setStatusEdit] = useState<{ id: string; status: string } | null>(null)
 
   const { data, isLoading } = useQuery({
@@ -76,6 +78,12 @@ export default function ProposalsPage() {
     mutationFn: (id: string) => api.deleteProposal(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['proposals'] }); setDeleteTarget(null) },
   })
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.bulkDeleteProposals(ids),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['proposals'] }); setSelectedIds(new Set()); setBulkDeleteOpen(false) },
+  })
+  function toggleSelect(id: string) { setSelectedIds((p) => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s }) }
+  function toggleSelectAll() { setSelectedIds(selectedIds.size === proposals.length && proposals.length > 0 ? new Set() : new Set(proposals.map((p) => p.id))) }
 
   function openCreate() { setEditTarget(null); setForm(EMPTY_FORM); setFormError(''); setFormOpen(true) }
   function openEdit(p: Proposal) {
@@ -110,9 +118,16 @@ export default function ProposalsPage() {
           <h1 className="text-xl font-bold text-text-primary">Proposals</h1>
           <p className="text-text-secondary text-sm mt-0.5">{total} proposals</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-2 bg-mrr-green text-black text-sm font-medium px-3 py-1.5 rounded hover:bg-emerald-400 transition-colors">
-          <Plus className="w-4 h-4" /> New Proposal
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button onClick={() => setBulkDeleteOpen(true)} className="flex items-center gap-2 bg-churn-red text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-red-600 transition-colors">
+              <Trash2 className="w-4 h-4" /> Delete ({selectedIds.size})
+            </button>
+          )}
+          <button onClick={openCreate} className="flex items-center gap-2 bg-mrr-green text-black text-sm font-medium px-3 py-1.5 rounded hover:bg-emerald-400 transition-colors">
+            <Plus className="w-4 h-4" /> New Proposal
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-3">
@@ -133,6 +148,7 @@ export default function ProposalsPage() {
         <table className="w-full">
           <thead className="border-b border-border">
             <tr>
+              <th className="table-header w-10"><input type="checkbox" className="rounded" checked={selectedIds.size === proposals.length && proposals.length > 0} onChange={toggleSelectAll} /></th>
               <th className="table-header">Proposal #</th>
               <th className="table-header">Company</th>
               <th className="table-header">Deal</th>
@@ -146,19 +162,20 @@ export default function ProposalsPage() {
             {isLoading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="border-b border-border">
-                  <td colSpan={7} className="table-cell"><div className="h-4 bg-surface rounded animate-pulse w-full" /></td>
+                  <td colSpan={8} className="table-cell"><div className="h-4 bg-surface rounded animate-pulse w-full" /></td>
                 </tr>
               ))
             ) : proposals.length === 0 ? (
               <tr>
-                <td colSpan={7} className="table-cell text-center text-text-secondary py-12">
+                <td colSpan={8} className="table-cell text-center text-text-secondary py-12">
                   <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
                   No proposals yet
                 </td>
               </tr>
             ) : (
               proposals.map((p) => (
-                <tr key={p.id} className="border-b border-border hover:bg-surface transition-colors group">
+                <tr key={p.id} className={`border-b border-border hover:bg-surface transition-colors group ${selectedIds.has(p.id) ? 'bg-surface' : ''}`}>
+                  <td className="table-cell w-10"><input type="checkbox" className="rounded" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} /></td>
                   <td className="table-cell font-medium text-sm">{p.proposal_number || '—'}</td>
                   <td className="table-cell">
                     <Link href={`/companies/${p.company_id}`} className="text-sm hover:text-mrr-green transition-colors">
@@ -260,6 +277,14 @@ export default function ProposalsPage() {
         title="Delete Proposal"
         message={`Delete proposal ${deleteTarget?.proposal_number || ''}? This cannot be undone.`}
         loading={deleteMutation.isPending}
+      />
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
+        title="Delete Selected Proposals"
+        message={`Delete ${selectedIds.size} selected proposals? This cannot be undone.`}
+        loading={bulkDeleteMutation.isPending}
       />
     </div>
   )

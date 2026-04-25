@@ -50,6 +50,8 @@ export default function DealsPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [formError, setFormError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Deal | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const { data: pipelineData } = useQuery({
     queryKey: ['deals-pipeline'],
@@ -95,6 +97,13 @@ export default function DealsPage() {
     mutationFn: (id: string) => api.deleteDeal(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['deals'] }); setDeleteTarget(null) },
   })
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.bulkDeleteDeals(ids),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['deals'] }); setSelectedIds(new Set()); setBulkDeleteOpen(false) },
+  })
+  function toggleSelect(id: string) { setSelectedIds((p) => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s }) }
+  function toggleSelectAll() { setSelectedIds(selectedIds.size === listDeals.length && listDeals.length > 0 ? new Set() : new Set(listDeals.map((d) => d.id))) }
 
   function openCreate() { setEditTarget(null); setForm(EMPTY_FORM); setFormError(''); setFormOpen(true) }
   function openEdit(d: Deal) {
@@ -148,6 +157,11 @@ export default function DealsPage() {
               <List className="w-3.5 h-3.5" /> List
             </button>
           </div>
+          {selectedIds.size > 0 && view === 'list' && (
+            <button onClick={() => setBulkDeleteOpen(true)} className="flex items-center gap-2 bg-churn-red text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-red-600 transition-colors">
+              <Trash2 className="w-4 h-4" /> Delete ({selectedIds.size})
+            </button>
+          )}
           <button onClick={openCreate} className="flex items-center gap-2 bg-mrr-green text-black text-sm font-medium px-3 py-1.5 rounded hover:bg-emerald-400 transition-colors">
             <Plus className="w-4 h-4" /> New Deal
           </button>
@@ -248,6 +262,7 @@ export default function DealsPage() {
             <table className="w-full">
               <thead className="border-b border-border">
                 <tr>
+                  <th className="table-header w-10"><input type="checkbox" className="rounded" checked={selectedIds.size === listDeals.length && listDeals.length > 0} onChange={toggleSelectAll} /></th>
                   <th className="table-header">Deal</th>
                   <th className="table-header">Company</th>
                   <th className="table-header">Stage</th>
@@ -261,14 +276,15 @@ export default function DealsPage() {
                 {listLoading ? (
                   Array.from({ length: 8 }).map((_, i) => (
                     <tr key={i} className="border-b border-border">
-                      <td colSpan={7} className="table-cell"><div className="h-4 bg-surface rounded animate-pulse w-full" /></td>
+                      <td colSpan={8} className="table-cell"><div className="h-4 bg-surface rounded animate-pulse w-full" /></td>
                     </tr>
                   ))
                 ) : listDeals.length === 0 ? (
-                  <tr><td colSpan={7} className="table-cell text-center text-text-secondary py-10">No deals found</td></tr>
+                  <tr><td colSpan={8} className="table-cell text-center text-text-secondary py-10">No deals found</td></tr>
                 ) : (
                   listDeals.map((deal) => (
-                    <tr key={deal.id} className="border-b border-border hover:bg-surface transition-colors group">
+                    <tr key={deal.id} className={`border-b border-border hover:bg-surface transition-colors group ${selectedIds.has(deal.id) ? 'bg-surface' : ''}`}>
+                      <td className="table-cell w-10"><input type="checkbox" className="rounded" checked={selectedIds.has(deal.id)} onChange={() => toggleSelect(deal.id)} /></td>
                       <td className="table-cell font-medium">{deal.name}</td>
                       <td className="table-cell">
                         <Link href={`/companies/${deal.company_id}`} className="text-text-secondary hover:text-mrr-green text-sm">
@@ -366,6 +382,14 @@ export default function DealsPage() {
         title="Delete Deal"
         message={`Delete "${deleteTarget?.name}"? This cannot be undone.`}
         loading={deleteMutation.isPending}
+      />
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
+        title="Delete Selected Deals"
+        message={`Delete ${selectedIds.size} selected deals? This cannot be undone.`}
+        loading={bulkDeleteMutation.isPending}
       />
     </div>
   )

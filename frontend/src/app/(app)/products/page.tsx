@@ -26,6 +26,8 @@ export default function ProductsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [form, setForm] = useState<Partial<Product>>({
     name: '',
     sku: '',
@@ -57,6 +59,12 @@ export default function ProductsPage() {
     mutationFn: (id: string) => api.deleteProduct(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['products'] }); setDeleteTarget(null) },
   })
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.bulkDeleteProducts(ids),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['products'] }); setSelectedIds(new Set()); setBulkDeleteOpen(false) },
+  })
+  function toggleSelect(id: string) { setSelectedIds((p) => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s }) }
+  function toggleSelectAll() { setSelectedIds(selectedIds.size === products.length && products.length > 0 ? new Set() : new Set(products.map((p) => p.id))) }
 
   function resetForm() {
     setShowCreate(false)
@@ -76,12 +84,19 @@ export default function ProductsPage() {
           <h1 className="text-xl font-bold text-text-primary">Products</h1>
           <p className="text-text-secondary text-sm mt-0.5">{products.length} products</p>
         </div>
-        <button
-          className="btn-primary flex items-center gap-1.5 text-sm px-3 py-1.5"
-          onClick={() => { setShowCreate(true); setEditId(null) }}
-        >
-          <Plus className="w-4 h-4" /> Add Product
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button onClick={() => setBulkDeleteOpen(true)} className="flex items-center gap-2 bg-churn-red text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-red-600 transition-colors">
+              <Trash2 className="w-4 h-4" /> Delete ({selectedIds.size})
+            </button>
+          )}
+          <button
+            className="btn-primary flex items-center gap-1.5 text-sm px-3 py-1.5"
+            onClick={() => { setShowCreate(true); setEditId(null) }}
+          >
+            <Plus className="w-4 h-4" /> Add Product
+          </button>
+        </div>
       </div>
 
       {/* Create form */}
@@ -112,6 +127,7 @@ export default function ProductsPage() {
         <table className="w-full">
           <thead className="border-b border-border">
             <tr>
+              <th className="table-header w-10"><input type="checkbox" className="rounded" checked={selectedIds.size === products.length && products.length > 0} onChange={toggleSelectAll} /></th>
               <th className="table-header">Product</th>
               <th className="table-header">SKU</th>
               <th className="table-header">Billing</th>
@@ -126,14 +142,14 @@ export default function ProductsPage() {
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i} className="border-b border-border">
-                  <td colSpan={8} className="table-cell">
+                  <td colSpan={9} className="table-cell">
                     <div className="h-4 bg-surface rounded animate-pulse w-full" />
                   </td>
                 </tr>
               ))
             ) : products.length === 0 ? (
               <tr>
-                <td colSpan={8} className="table-cell text-center text-text-secondary py-12">
+                <td colSpan={9} className="table-cell text-center text-text-secondary py-12">
                   No products yet. Add your first product or import from Excel.
                 </td>
               </tr>
@@ -141,7 +157,7 @@ export default function ProductsPage() {
               products.map((p) =>
                 editId === p.id ? (
                   <tr key={p.id} className="border-b border-border bg-surface">
-                    <td colSpan={8} className="p-3">
+                    <td colSpan={9} className="p-3">
                       <div className="space-y-3">
                         <ProductForm form={form} setForm={setForm} />
                         <div className="flex gap-2">
@@ -159,7 +175,8 @@ export default function ProductsPage() {
                     </td>
                   </tr>
                 ) : (
-                  <tr key={p.id} className="border-b border-border hover:bg-surface transition-colors">
+                  <tr key={p.id} className={`border-b border-border hover:bg-surface transition-colors ${selectedIds.has(p.id) ? 'bg-surface' : ''}`}>
+                    <td className="table-cell w-10"><input type="checkbox" className="rounded" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} /></td>
                     <td className="table-cell font-medium">
                       {p.name}
                       {p.description && (
@@ -203,6 +220,14 @@ export default function ProductsPage() {
         title="Delete Product"
         message={`Delete "${deleteTarget?.name}"? This will NOT remove related ledger entries or invoices.`}
         loading={deleteMutation.isPending}
+      />
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
+        title="Delete Selected Products"
+        message={`Delete ${selectedIds.size} selected products? This cannot be undone.`}
+        loading={bulkDeleteMutation.isPending}
       />
     </div>
   )

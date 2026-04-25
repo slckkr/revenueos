@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { Search, Building2, ChevronRight, ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react'
+import { Search, Building2, ChevronRight, ChevronLeft, Plus, Pencil, Trash2, CheckSquare } from 'lucide-react'
 import { api, Company, ChurnRiskScore } from '@/lib/api'
 import { formatCurrency } from '@/lib/formatters'
 import { SegmentBadge, Badge } from '@/components/ui/Badge'
@@ -78,6 +78,8 @@ export default function CompaniesPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [formError, setFormError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Company | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['companies', search, segment, status, page],
@@ -117,6 +119,18 @@ export default function CompaniesPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }); setDeleteTarget(null) },
   })
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.bulkDeleteCompanies(ids),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }); setSelectedIds(new Set()); setBulkDeleteOpen(false) },
+  })
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  }
+  function toggleSelectAll() {
+    setSelectedIds(selectedIds.size === companies.length && companies.length > 0 ? new Set() : new Set(companies.map((c) => c.id)))
+  }
+
   function openCreate() {
     setEditTarget(null); setForm(EMPTY_FORM); setFormError(''); setFormOpen(true)
   }
@@ -149,9 +163,16 @@ export default function CompaniesPage() {
           <h1 className="text-xl font-bold text-text-primary">Companies</h1>
           <p className="text-text-secondary text-sm mt-0.5">{total} total</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-2 bg-mrr-green text-black text-sm font-medium px-3 py-1.5 rounded hover:bg-emerald-400 transition-colors">
-          <Plus className="w-4 h-4" /> New Company
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button onClick={() => setBulkDeleteOpen(true)} className="flex items-center gap-2 bg-churn-red text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-red-600 transition-colors">
+              <Trash2 className="w-4 h-4" /> Delete Selected ({selectedIds.size})
+            </button>
+          )}
+          <button onClick={openCreate} className="flex items-center gap-2 bg-mrr-green text-black text-sm font-medium px-3 py-1.5 rounded hover:bg-emerald-400 transition-colors">
+            <Plus className="w-4 h-4" /> New Company
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -175,6 +196,9 @@ export default function CompaniesPage() {
         <table className="w-full">
           <thead className="border-b border-border">
             <tr>
+              <th className="table-header w-10">
+                <input type="checkbox" className="rounded" checked={selectedIds.size === companies.length && companies.length > 0} onChange={toggleSelectAll} />
+              </th>
               <th className="table-header">Company</th>
               <th className="table-header">Segment</th>
               <th className="table-header">Country</th>
@@ -194,7 +218,7 @@ export default function CompaniesPage() {
               ))
             ) : companies.length === 0 ? (
               <tr>
-                <td colSpan={8} className="table-cell text-center text-text-secondary py-12">
+                <td colSpan={9} className="table-cell text-center text-text-secondary py-12">
                   <Building2 className="w-8 h-8 mx-auto mb-2 opacity-30" />
                   No companies found
                 </td>
@@ -203,7 +227,10 @@ export default function CompaniesPage() {
               companies.map((company) => {
                 const mrr = company.current_mrr ?? 0
                 return (
-                  <tr key={company.id} className="border-b border-border hover:bg-surface transition-colors group">
+                  <tr key={company.id} className={`border-b border-border hover:bg-surface transition-colors group ${selectedIds.has(company.id) ? 'bg-surface' : ''}`}>
+                    <td className="table-cell w-10">
+                      <input type="checkbox" className="rounded" checked={selectedIds.has(company.id)} onChange={() => toggleSelect(company.id)} />
+                    </td>
                     <td className="table-cell">
                       <div className="flex items-center gap-2">
                         <Link href={`/companies/${company.id}`} className="font-medium hover:text-mrr-green transition-colors">{company.name}</Link>
@@ -317,7 +344,6 @@ export default function CompaniesPage() {
         </form>
       </Modal>
 
-      {/* Delete Confirm */}
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
@@ -325,6 +351,15 @@ export default function CompaniesPage() {
         title="Delete Company"
         message={`Delete "${deleteTarget?.name}"? This removes the company record but NOT related invoices or ledger entries.`}
         loading={deleteMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
+        title="Delete Selected Companies"
+        message={`Delete ${selectedIds.size} selected companies? This cannot be undone.`}
+        loading={bulkDeleteMutation.isPending}
       />
     </div>
   )
