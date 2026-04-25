@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Check, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api, LedgerEntry } from '@/lib/api'
 import { formatCurrency, formatMonth } from '@/lib/formatters'
 import { EventBadge } from '@/components/ui/Badge'
@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const EVENT_TYPES = ['NEW', 'EXPANSION', 'CONTRACTION', 'CHURN', 'REACTIVATION', 'PRICE_INCREASE']
+const PAGE_SIZES = [25, 50, 100, 200]
 
 type LedgerRow = LedgerEntry & { companies?: { name: string }; products?: { name: string } }
 
@@ -31,6 +32,7 @@ export default function LedgerPage() {
   const [eventType, setEventType] = useState('')
   const [companyId, setCompanyId] = useState('')
   const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(25)
 
   const [editId, setEditId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<LedgerEntry>>({})
@@ -56,8 +58,8 @@ export default function LedgerPage() {
   const products = productsData?.data || []
 
   const { data, isLoading } = useQuery({
-    queryKey: ['ledger', month, eventType, companyId, page],
-    queryFn: () => api.getLedger({ month: month || undefined, event_type: eventType || undefined, company_id: companyId || undefined, page }),
+    queryKey: ['ledger', month, eventType, companyId, page, limit],
+    queryFn: () => api.getLedger({ month: month || undefined, event_type: eventType || undefined, company_id: companyId || undefined, page, limit }),
     placeholderData: (prev) => prev,
   })
 
@@ -244,15 +246,30 @@ export default function LedgerPage() {
           </tbody>
         </table>
 
-        {total > 100 && (
-          <div className="px-4 py-3 border-t border-border flex items-center justify-between">
-            <span className="text-sm text-text-secondary">Page {page}</span>
-            <div className="flex gap-2">
-              <button className="btn-secondary text-xs px-3 py-1" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Previous</button>
-              <button className="btn-secondary text-xs px-3 py-1" onClick={() => setPage((p) => p + 1)} disabled={entries.length < 100}>Next</button>
+        {(() => {
+          const totalPages = Math.ceil(total / limit)
+          return (
+            <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-text-secondary">{total} entries</span>
+                <select className="select text-xs py-0.5 px-2 h-7" value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1) }}>
+                  {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / page</option>)}
+                </select>
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted">Page {page} of {totalPages}</span>
+                  <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+                    <ChevronLeft className="w-3 h-3" /> Prev
+                  </button>
+                  <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>
+                    Next <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          )
+        })()}
       </div>
 
       {/* New Entry Modal */}

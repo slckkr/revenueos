@@ -34,16 +34,19 @@ const updateSchema = Joi.object({
 
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.tenantId
+  const { page = '1', limit = '50' } = req.query as Record<string, string>
+  const from = (parseInt(page) - 1) * parseInt(limit)
 
-  const { data, error } = await supabase
+  const { data, error, count } = await supabase
     .from('products')
-    .select('*')
+    .select('*', { count: 'exact' })
     .eq('tenant_id', tenantId)
     .order('name')
+    .range(from, from + parseInt(limit) - 1)
 
   if (error) throw new AppError(error.message, 500, 'DB_ERROR')
 
-  res.json({ success: true, data })
+  res.json({ success: true, data, meta: { total: count ?? 0, page: parseInt(page), limit: parseInt(limit) } })
 }))
 
 router.post('/', validate(createSchema), asyncHandler(async (req: Request, res: Response) => {

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { Plus, Pencil, Trash2, LayoutGrid, List, TrendingUp, Target, Clock, DollarSign } from 'lucide-react'
+import { Plus, Pencil, Trash2, LayoutGrid, List, TrendingUp, Target, Clock, DollarSign, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatCurrency } from '@/lib/formatters'
 import { SegmentBadge } from '@/components/ui/Badge'
@@ -27,6 +27,8 @@ const EMPTY_FORM: FormState = {
   probability: '', expected_close_date: '', deal_type: '', product_id: '', notes: '',
 }
 
+const PAGE_SIZES = [25, 50, 100, 200]
+
 const STAGES = [
   { key: 'lead', label: 'Lead', color: 'bg-slate-500' },
   { key: 'mql', label: 'MQL', color: 'bg-blue-500' },
@@ -45,6 +47,8 @@ export default function DealsPage() {
   const [view, setView] = useState<'kanban' | 'list'>('kanban')
   const [statusFilter, setStatusFilter] = useState('open')
   const [stageFilter, setStageFilter] = useState('')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(25)
   const [formOpen, setFormOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Deal | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
@@ -60,8 +64,8 @@ export default function DealsPage() {
   })
 
   const { data: listData, isLoading: listLoading } = useQuery({
-    queryKey: ['deals-list', statusFilter, stageFilter],
-    queryFn: () => api.getDeals({ status: statusFilter || undefined, stage: stageFilter || undefined }),
+    queryKey: ['deals-list', statusFilter, stageFilter, page, limit],
+    queryFn: () => api.getDeals({ status: statusFilter || undefined, stage: stageFilter || undefined, page, limit }),
     enabled: view === 'list',
   })
 
@@ -78,6 +82,7 @@ export default function DealsPage() {
   const pipeline = pipelineData?.data || {}
   const pipelineMetrics = pipelineData?.metrics
   const listDeals = listData?.data || []
+  const listTotal = listData?.meta?.total || 0
   const companies = companiesData?.data || []
   const products = productsData?.data || []
 
@@ -310,6 +315,30 @@ export default function DealsPage() {
                 )}
               </tbody>
             </table>
+            {(() => {
+              const totalPages = Math.ceil(listTotal / limit)
+              return (
+                <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-text-secondary">{listTotal} deals</span>
+                    <select className="select text-xs py-0.5 px-2 h-7" value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1) }}>
+                      {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / page</option>)}
+                    </select>
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-text-muted">Page {page} of {totalPages}</span>
+                      <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+                        <ChevronLeft className="w-3 h-3" /> Prev
+                      </button>
+                      <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>
+                        Next <ChevronRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         </>
       )}

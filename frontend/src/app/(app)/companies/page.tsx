@@ -12,7 +12,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const SEGMENTS = ['', 'ENT', 'MID', 'SMB']
 const STATUSES = ['', 'active', 'churned', 'at-risk', 'prospect']
-const LIMIT = 25
+const PAGE_SIZES = [25, 50, 100, 200]
 
 type FormState = {
   name: string; domain: string; segment: string; status: string
@@ -72,6 +72,7 @@ export default function CompaniesPage() {
   const [segment, setSegment] = useState('')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(25)
 
   const [formOpen, setFormOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Company | null>(null)
@@ -82,8 +83,8 @@ export default function CompaniesPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['companies', search, segment, status, page],
-    queryFn: () => api.getCompanies({ search: search || undefined, segment: segment || undefined, page, limit: LIMIT, sort: 'mrr' }),
+    queryKey: ['companies', search, segment, status, page, limit],
+    queryFn: () => api.getCompanies({ search: search || undefined, segment: segment || undefined, page, limit, sort: 'mrr' }),
     placeholderData: (prev) => prev,
   })
 
@@ -100,7 +101,7 @@ export default function CompaniesPage() {
 
   const companies = data?.data || []
   const total = data?.meta?.total || 0
-  const totalPages = Math.ceil(total / LIMIT)
+  const totalPages = Math.ceil(total / limit)
 
   const createMutation = useMutation({
     mutationFn: (payload: ReturnType<typeof formToPayload>) => api.createCompany(payload),
@@ -269,19 +270,25 @@ export default function CompaniesPage() {
           </tbody>
         </table>
 
-        {totalPages > 1 && (
-          <div className="px-4 py-3 border-t border-border flex items-center justify-between">
-            <span className="text-sm text-text-secondary">Page {page} of {totalPages} · {total} companies</span>
-            <div className="flex gap-2">
+        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-text-secondary">{total} companies</span>
+            <select className="select text-xs py-0.5 px-2 h-7" value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1) }}>
+              {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / page</option>)}
+            </select>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">Page {page} of {totalPages}</span>
               <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-                <ChevronLeft className="w-3 h-3" /> Previous
+                <ChevronLeft className="w-3 h-3" /> Prev
               </button>
               <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>
                 Next <ChevronRight className="w-3 h-3" />
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Create / Edit Modal */}

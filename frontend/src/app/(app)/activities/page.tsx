@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { Plus, Trash2, Phone, Mail, Users, FileText, CheckSquare, Monitor, ArrowRight } from 'lucide-react'
+import { Plus, Trash2, Phone, Mail, Users, FileText, CheckSquare, Monitor, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -26,6 +26,7 @@ const TYPE_COLORS: Record<string, string> = {
 }
 
 const TYPES = ['call', 'email', 'meeting', 'note', 'task', 'demo', 'follow_up']
+const PAGE_SIZES = [25, 50, 100, 200]
 
 type FormState = {
   company_id: string; contact_id: string; deal_id: string
@@ -51,6 +52,8 @@ export default function ActivitiesPage() {
   const qc = useQueryClient()
   const [typeFilter, setTypeFilter] = useState('')
   const [companyFilter, setCompanyFilter] = useState('')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(25)
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [formError, setFormError] = useState('')
@@ -59,8 +62,8 @@ export default function ActivitiesPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['activities', typeFilter, companyFilter],
-    queryFn: () => api.getActivities({ type: typeFilter || undefined, company_id: companyFilter || undefined }),
+    queryKey: ['activities', typeFilter, companyFilter, page, limit],
+    queryFn: () => api.getActivities({ type: typeFilter || undefined, company_id: companyFilter || undefined, page, limit }),
     placeholderData: (prev) => prev,
   })
 
@@ -133,7 +136,7 @@ export default function ActivitiesPage() {
       </div>
 
       <div className="flex gap-3 flex-wrap">
-        <select className="select flex-1 max-w-xs" value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)}>
+        <select className="select flex-1 max-w-xs" value={companyFilter} onChange={(e) => { setCompanyFilter(e.target.value); setPage(1) }}>
           <option value="">All companies</option>
           {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
@@ -141,7 +144,7 @@ export default function ActivitiesPage() {
           {['', ...TYPES].map((t) => (
             <button
               key={t}
-              onClick={() => setTypeFilter(t)}
+              onClick={() => { setTypeFilter(t); setPage(1) }}
               className={`text-xs px-2.5 py-1 rounded border transition-colors flex items-center gap-1 ${typeFilter === t ? 'border-mrr-green bg-emerald-950 text-mrr-green' : 'border-border text-text-muted hover:text-text-secondary'}`}
             >
               {t && TYPE_ICONS[t]}
@@ -210,6 +213,32 @@ export default function ActivitiesPage() {
           })
         )}
       </div>
+
+      {/* Pagination */}
+      {(() => {
+        const totalPages = Math.ceil(total / limit)
+        return (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-text-secondary">{total} activities</span>
+              <select className="select text-xs py-0.5 px-2 h-7" value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1) }}>
+                {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / page</option>)}
+              </select>
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-muted">Page {page} of {totalPages}</span>
+                <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+                  <ChevronLeft className="w-3 h-3" /> Prev
+                </button>
+                <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>
+                  Next <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       <Modal open={formOpen} onClose={closeForm} title="Log Activity" width="md">
         <form onSubmit={handleSubmit} className="space-y-4">

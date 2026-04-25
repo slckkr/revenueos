@@ -145,12 +145,13 @@ export const api = {
     fetchJSON<{ success: true; deleted: number }>('/companies/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   // Ledger
-  getLedger: (params?: { month?: string; company_id?: string; event_type?: string; page?: number }) => {
+  getLedger: (params?: { month?: string; company_id?: string; event_type?: string; page?: number; limit?: number }) => {
     const qs = new URLSearchParams()
     if (params?.month) qs.set('month', params.month)
     if (params?.company_id) qs.set('company_id', params.company_id)
     if (params?.event_type) qs.set('event_type', params.event_type)
     if (params?.page) qs.set('page', String(params.page))
+    if (params?.limit) qs.set('limit', String(params.limit))
     return fetchJSON<{ success: true; data: LedgerEntry[]; meta: { total: number } }>(
       `/ledger?${qs}`
     )
@@ -201,8 +202,13 @@ export const api = {
     ),
 
   // Products
-  getProducts: () =>
-    fetchJSON<{ success: true; data: Product[] }>('/products'),
+  getProducts: (params?: { page?: number; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.page) qs.set('page', String(params.page))
+    if (params?.limit) qs.set('limit', String(params.limit))
+    const q = qs.toString()
+    return fetchJSON<{ success: true; data: Product[]; meta: { total: number } }>(`/products${q ? `?${q}` : ''}`)
+  },
   createProduct: (data: Partial<Product>) =>
     fetchJSON<{ success: true; data: Product }>('/products', { method: 'POST', body: JSON.stringify(data) }),
   updateProduct: (id: string, data: Partial<Product>) =>
@@ -254,12 +260,13 @@ export const api = {
     fetchJSON<{ success: true; data: Segment[] }>('/segments'),
 
   // Revenue Events
-  getRevenueEvents: (params?: { month?: string; company_id?: string; event_type?: string; page?: number }) => {
+  getRevenueEvents: (params?: { month?: string; company_id?: string; event_type?: string; page?: number; limit?: number }) => {
     const qs = new URLSearchParams()
     if (params?.month) qs.set('month', params.month)
     if (params?.company_id) qs.set('company_id', params.company_id)
     if (params?.event_type) qs.set('event_type', params.event_type)
     if (params?.page) qs.set('page', String(params.page))
+    if (params?.limit) qs.set('limit', String(params.limit))
     return fetchJSON<{ success: true; data: RevenueEvent[]; meta: { total: number } }>(`/revenue-events?${qs}`)
   },
   createRevenueEvent: (data: Partial<RevenueEvent>) =>
@@ -370,12 +377,13 @@ export const api = {
     fetchJSON<{ success: true; data: Array<{ date: string; score: number }> }>(`/data-health/history?days=${days}`),
 
   // Phase 4: Deals
-  getDeals: (params?: { status?: string; stage?: string; company_id?: string; page?: number }) => {
+  getDeals: (params?: { status?: string; stage?: string; company_id?: string; page?: number; limit?: number }) => {
     const qs = new URLSearchParams()
     if (params?.status) qs.set('status', params.status)
     if (params?.stage) qs.set('stage', params.stage)
     if (params?.company_id) qs.set('company_id', params.company_id)
     if (params?.page) qs.set('page', String(params.page))
+    if (params?.limit) qs.set('limit', String(params.limit))
     return fetchJSON<{ success: true; data: Deal[]; meta: { total: number } }>(`/deals?${qs}`)
   },
   getDealsPipeline: () =>
@@ -392,11 +400,12 @@ export const api = {
     fetchJSON<{ success: true; deleted: number }>('/deals/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   // Phase 4: Proposals
-  getProposals: (params?: { company_id?: string; status?: string; page?: number }) => {
+  getProposals: (params?: { company_id?: string; status?: string; page?: number; limit?: number }) => {
     const qs = new URLSearchParams()
     if (params?.company_id) qs.set('company_id', params.company_id)
     if (params?.status) qs.set('status', params.status)
     if (params?.page) qs.set('page', String(params.page))
+    if (params?.limit) qs.set('limit', String(params.limit))
     return fetchJSON<{ success: true; data: Proposal[]; meta: { total: number } }>(`/proposals?${qs}`)
   },
   createProposal: (data: Partial<Proposal>) =>
@@ -409,11 +418,12 @@ export const api = {
     fetchJSON<{ success: true; deleted: number }>('/proposals/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   // Phase 4: Contracts
-  getContracts: (params?: { company_id?: string; status?: string; page?: number }) => {
+  getContracts: (params?: { company_id?: string; status?: string; page?: number; limit?: number }) => {
     const qs = new URLSearchParams()
     if (params?.company_id) qs.set('company_id', params.company_id)
     if (params?.status) qs.set('status', params.status)
     if (params?.page) qs.set('page', String(params.page))
+    if (params?.limit) qs.set('limit', String(params.limit))
     return fetchJSON<{ success: true; data: Contract[]; meta: { total: number } }>(`/contracts?${qs}`)
   },
   getUpcomingRenewals: (days = 30) =>
@@ -428,12 +438,13 @@ export const api = {
     fetchJSON<{ success: true; deleted: number }>('/contracts/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   // Phase 4: Activities
-  getActivities: (params?: { company_id?: string; deal_id?: string; type?: string; page?: number }) => {
+  getActivities: (params?: { company_id?: string; deal_id?: string; type?: string; page?: number; limit?: number }) => {
     const qs = new URLSearchParams()
     if (params?.company_id) qs.set('company_id', params.company_id)
     if (params?.deal_id) qs.set('deal_id', params.deal_id)
     if (params?.type) qs.set('type', params.type)
     if (params?.page) qs.set('page', String(params.page))
+    if (params?.limit) qs.set('limit', String(params.limit))
     return fetchJSON<{ success: true; data: ActivityItem[]; meta: { total: number } }>(`/activities?${qs}`)
   },
   createActivity: (data: Partial<ActivityItem>) =>

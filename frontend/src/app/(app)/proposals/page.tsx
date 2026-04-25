@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { Plus, Pencil, Trash2, FileText, ChevronRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, FileText, ChevronRight, ChevronLeft } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatCurrency } from '@/lib/formatters'
 import { Badge } from '@/components/ui/Badge'
@@ -22,6 +22,7 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'default'
 }
 
 const STATUSES = ['draft', 'sent', 'viewed', 'accepted', 'rejected', 'expired']
+const PAGE_SIZES = [25, 50, 100, 200]
 
 type FormState = {
   company_id: string; deal_id: string; title: string; amount: string; currency: string
@@ -32,6 +33,8 @@ const EMPTY_FORM: FormState = { company_id: '', deal_id: '', title: '', amount: 
 export default function ProposalsPage() {
   const qc = useQueryClient()
   const [statusFilter, setStatusFilter] = useState('')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(25)
   const [formOpen, setFormOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Proposal | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
@@ -42,8 +45,8 @@ export default function ProposalsPage() {
   const [statusEdit, setStatusEdit] = useState<{ id: string; status: string } | null>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['proposals', statusFilter],
-    queryFn: () => api.getProposals({ status: statusFilter || undefined }),
+    queryKey: ['proposals', statusFilter, page, limit],
+    queryFn: () => api.getProposals({ status: statusFilter || undefined, page, limit }),
     placeholderData: (prev) => prev,
   })
 
@@ -135,7 +138,7 @@ export default function ProposalsPage() {
           {['', ...STATUSES].map((s) => (
             <button
               key={s}
-              onClick={() => setStatusFilter(s)}
+              onClick={() => { setStatusFilter(s); setPage(1) }}
               className={`text-xs px-3 py-1.5 rounded border transition-colors ${statusFilter === s ? 'border-mrr-green bg-emerald-950 text-mrr-green' : 'border-border text-text-muted hover:text-text-secondary'}`}
             >
               {s || 'All'}
@@ -220,6 +223,30 @@ export default function ProposalsPage() {
             )}
           </tbody>
         </table>
+        {(() => {
+          const totalPages = Math.ceil(total / limit)
+          return (
+            <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-text-secondary">{total} proposals</span>
+                <select className="select text-xs py-0.5 px-2 h-7" value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1) }}>
+                  {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / page</option>)}
+                </select>
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted">Page {page} of {totalPages}</span>
+                  <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+                    <ChevronLeft className="w-3 h-3" /> Prev
+                  </button>
+                  <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>
+                    Next <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       <Modal open={formOpen} onClose={closeForm} title={editTarget ? `Edit Proposal` : 'New Proposal'} width="md">

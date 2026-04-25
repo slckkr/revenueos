@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { Plus, Pencil, Trash2, FileSignature, AlertTriangle } from 'lucide-react'
+import { Plus, Pencil, Trash2, FileSignature, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatCurrency } from '@/lib/formatters'
 import { Badge } from '@/components/ui/Badge'
@@ -17,6 +17,8 @@ type Contract = {
   signed_date?: string | null; notes?: string | null; created_at?: string
   companies?: { name: string; segment?: string | null }
 }
+
+const PAGE_SIZES = [25, 50, 100, 200]
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
   active: 'success', expired: 'error', cancelled: 'error', draft: 'default', renewed: 'warning',
@@ -40,6 +42,8 @@ export default function ContractsPage() {
   const qc = useQueryClient()
   const [statusFilter, setStatusFilter] = useState('active')
   const [tab, setTab] = useState<'all' | 'upcoming'>('all')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(25)
   const [formOpen, setFormOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Contract | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
@@ -49,8 +53,8 @@ export default function ContractsPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['contracts', statusFilter],
-    queryFn: () => api.getContracts({ status: statusFilter || undefined }),
+    queryKey: ['contracts', statusFilter, page, limit],
+    queryFn: () => api.getContracts({ status: statusFilter || undefined, page, limit }),
     placeholderData: (prev) => prev,
     enabled: tab === 'all',
   })
@@ -246,6 +250,30 @@ export default function ContractsPage() {
             )}
           </tbody>
         </table>
+        {tab === 'all' && (() => {
+          const totalPages = Math.ceil(total / limit)
+          return (
+            <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-text-secondary">{total} contracts</span>
+                <select className="select text-xs py-0.5 px-2 h-7" value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1) }}>
+                  {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / page</option>)}
+                </select>
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted">Page {page} of {totalPages}</span>
+                  <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+                    <ChevronLeft className="w-3 h-3" /> Prev
+                  </button>
+                  <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>
+                    Next <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       <Modal open={formOpen} onClose={closeForm} title={editTarget ? 'Edit Contract' : 'New Contract'} width="md">

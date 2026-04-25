@@ -6,9 +6,10 @@ import { api, Product } from '@/lib/api'
 import { formatCurrency } from '@/lib/formatters'
 import { Badge } from '@/components/ui/Badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { Plus, X, Check, Trash2 } from 'lucide-react'
+import { Plus, X, Check, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PRICING_MODELS = ['flat', 'tiered', 'usage', 'per-seat'] as const
+const PAGE_SIZES = [25, 50, 100, 200]
 const BILLING_PERIODS = ['monthly', 'annual', 'one_time'] as const
 const STATUSES = ['active', 'deprecated', 'beta'] as const
 
@@ -28,6 +29,8 @@ export default function ProductsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(25)
   const [form, setForm] = useState<Partial<Product>>({
     name: '',
     sku: '',
@@ -40,10 +43,11 @@ export default function ProductsPage() {
   })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['products'],
-    queryFn: () => api.getProducts(),
+    queryKey: ['products', page, limit],
+    queryFn: () => api.getProducts({ page, limit }),
   })
   const products = data?.data || []
+  const total = data?.meta?.total || 0
 
   const createMutation = useMutation({
     mutationFn: (d: Partial<Product>) => api.createProduct(d),
@@ -82,7 +86,7 @@ export default function ProductsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-text-primary">Products</h1>
-          <p className="text-text-secondary text-sm mt-0.5">{products.length} products</p>
+          <p className="text-text-secondary text-sm mt-0.5">{total} products</p>
         </div>
         <div className="flex items-center gap-2">
           {selectedIds.size > 0 && (
@@ -211,6 +215,30 @@ export default function ProductsPage() {
             )}
           </tbody>
         </table>
+        {(() => {
+          const totalPages = Math.ceil(total / limit)
+          return (
+            <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-text-secondary">{total} products</span>
+                <select className="select text-xs py-0.5 px-2 h-7" value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1) }}>
+                  {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / page</option>)}
+                </select>
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted">Page {page} of {totalPages}</span>
+                  <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+                    <ChevronLeft className="w-3 h-3" /> Prev
+                  </button>
+                  <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>
+                    Next <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       <ConfirmDialog

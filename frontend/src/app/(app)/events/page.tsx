@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Check, X, TrendingUp } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api, RevenueEvent } from '@/lib/api'
 import { formatCurrency, formatMonth } from '@/lib/formatters'
 import { EventBadge } from '@/components/ui/Badge'
@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const EVENT_TYPES = ['NEW', 'EXPANSION', 'CONTRACTION', 'CHURN', 'REACTIVATION', 'PRICE_INCREASE']
+const PAGE_SIZES = [25, 50, 100, 200]
 
 type FormState = {
   company_id: string
@@ -36,6 +37,7 @@ export default function EventsPage() {
   const [companyFilter, setCompanyFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(25)
 
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
@@ -49,12 +51,13 @@ export default function EventsPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['revenue-events', monthFilter, companyFilter, typeFilter, page],
+    queryKey: ['revenue-events', monthFilter, companyFilter, typeFilter, page, limit],
     queryFn: () => api.getRevenueEvents({
       month: monthFilter || undefined,
       company_id: companyFilter || undefined,
       event_type: typeFilter || undefined,
       page,
+      limit,
     }),
     placeholderData: (prev) => prev,
   })
@@ -66,7 +69,7 @@ export default function EventsPage() {
 
   const events = data?.data || []
   const total = data?.meta?.total || 0
-  const totalPages = Math.ceil(total / 100)
+  const totalPages = Math.ceil(total / limit)
   const companies = companiesData?.data || []
 
   const createMutation = useMutation({
@@ -308,19 +311,25 @@ export default function EventsPage() {
           </tbody>
         </table>
 
-        {totalPages > 1 && (
-          <div className="px-4 py-3 border-t border-border flex items-center justify-between">
-            <span className="text-sm text-text-secondary">Page {page} of {totalPages} · {total} events</span>
-            <div className="flex gap-2">
-              <button className="btn-secondary text-xs px-3 py-1" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-                Previous
+        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-text-secondary">{total} events</span>
+            <select className="select text-xs py-0.5 px-2 h-7" value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1) }}>
+              {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / page</option>)}
+            </select>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">Page {page} of {totalPages}</span>
+              <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+                <ChevronLeft className="w-3 h-3" /> Prev
               </button>
-              <button className="btn-secondary text-xs px-3 py-1" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>
-                Next
+              <button className="btn-secondary text-xs px-3 py-1 flex items-center gap-1" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>
+                Next <ChevronRight className="w-3 h-3" />
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* New Event Modal */}
