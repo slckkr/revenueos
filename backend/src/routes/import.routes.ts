@@ -5,6 +5,64 @@ import { supabase } from '../config/supabase'
 import { AppError, asyncHandler } from '../middleware/error.middleware'
 import { importExcelService } from '../services/import-excel.service'
 import { importXmlService } from '../services/import-xml.service'
+import { revenueRecognitionService } from '../services/revenue-recognition.service'
+import { revenueEventsService } from '../services/revenue-events.service'
+import logger from '../logger'
+
+async function autoRebuildAfterImport(tenantId: string, fileId: string): Promise<void> {
+  try {
+    // Find the date range of the newly imported invoices
+    const { data: rows } = await supabase
+      .from('invoices')
+      .select('issue_date, service_period_start, service_period_end')
+      .eq('import_file_id', fileId)
+      .not('status', 'eq', 'void')
+
+    if (!rows || rows.length === 0) return
+
+    let minDate = '9999-12-31'
+    let maxDate = '0000-01-01'
+    for (const row of rows) {
+      const start = row.service_period_start || row.issue_date
+      const end   = row.service_period_end   || row.issue_date
+      if (start < minDate) minDate = start
+      if (end   > maxDate) maxDate = end
+    }
+
+    const fromMonth = minDate.slice(0, 7) // YYYY-MM
+    const toMonth   = maxDate.slice(0, 7)
+
+    // Load tenant settings
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('reporting_currency, recognition_method')
+      .eq('tenant_id', tenantId)
+      .single()
+
+    const reportingCurrency = settings?.reporting_currency || 'USD'
+    const method = (settings?.recognition_method || 'accrual') as 'accrual' | 'cash'
+
+    logger.info(`Auto-rebuild triggered for import ${fileId}: ${fromMonth} → ${toMonth}`)
+
+    await revenueRecognitionService.rebuildLedger(tenantId, fromMonth, toMonth, reportingCurrency, method)
+
+    // Derive events for full ledger range so all months are consistent
+    const { data: ledgerMonths } = await supabase
+      .from('revenue_ledger')
+      .select('month')
+      .eq('tenant_id', tenantId)
+      .order('month', { ascending: true })
+
+    const uniqueMonths = [...new Set((ledgerMonths || []).map((r: { month: string }) => r.month))]
+    if (uniqueMonths.length > 0) {
+      await revenueEventsService.deriveEventsRange(tenantId, uniqueMonths[0], uniqueMonths[uniqueMonths.length - 1])
+    }
+
+    logger.info(`Auto-rebuild complete for import ${fileId}`)
+  } catch (err) {
+    logger.error('Auto-rebuild after import failed', err)
+  }
+}
 
 const router = Router()
 
@@ -44,7 +102,12 @@ router.post(
       conflictMode
     )
 
-    res.json({ success: true, data: result })
+    // Fire-and-forget ledger rebuild so dashboard updates automatically
+    if (result.file_id && result.records_imported > 0) {
+      autoRebuildAfterImport(tenantId, result.file_id)
+    }
+
+    res.json({ success: true, data: { ...result, rebuild_triggered: result.records_imported > 0 } })
   })
 )
 
@@ -68,7 +131,11 @@ router.post(
       conflictMode
     )
 
-    res.json({ success: true, data: result })
+    if (result.file_id && result.records_imported > 0) {
+      autoRebuildAfterImport(tenantId, result.file_id)
+    }
+
+    res.json({ success: true, data: { ...result, rebuild_triggered: result.records_imported > 0 } })
   })
 )
 
@@ -87,7 +154,11 @@ router.post(
       req.file.originalname
     )
 
-    res.json({ success: true, data: result })
+    if ((result as any).file_id && (result as any).records_imported > 0) {
+      autoRebuildAfterImport(tenantId, (result as any).file_id)
+    }
+
+    res.json({ success: true, data: { ...(result as any), rebuild_triggered: (result as any).records_imported > 0 } })
   })
 )
 

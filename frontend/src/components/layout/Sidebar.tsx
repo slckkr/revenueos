@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
@@ -64,7 +65,13 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname()
-  const { theme, toggle } = useThemeStore()
+  const [mounted, setMounted] = useState(false)
+  const theme = useThemeStore((s) => s.theme)
+  const toggle = useThemeStore((s) => s.toggle)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   return (
     <aside className="w-56 h-screen bg-surface border-r border-border flex flex-col fixed left-0 top-0 z-20">
@@ -85,7 +92,7 @@ export function Sidebar() {
       <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
         {navItems.map((item) => {
           const Icon = item.icon
-          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+          const isActive = !!pathname && (pathname === item.href || pathname.startsWith(`${item.href}/`))
 
           return (
             <Link
@@ -107,14 +114,19 @@ export function Sidebar() {
 
       {/* Bottom actions */}
       <div className="p-2 border-t border-border space-y-0.5">
-        {/* Theme toggle */}
+        {/* Theme toggle — only renders after mount to avoid SSR mismatch */}
         <button
           onClick={toggle}
+          suppressHydrationWarning
           className="flex items-center gap-3 px-3 py-2 rounded text-sm font-medium
                      text-text-secondary hover:text-text-primary hover:bg-card w-full transition-colors"
         >
-          {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          {mounted ? (
+            theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />
+          ) : (
+            <Sun className="w-4 h-4" />
+          )}
+          {mounted ? (theme === 'dark' ? 'Light mode' : 'Dark mode') : 'Light mode'}
         </button>
         <button
           onClick={logout}

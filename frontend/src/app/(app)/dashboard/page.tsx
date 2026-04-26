@@ -73,7 +73,14 @@ export default function DashboardPage() {
     staleTime: 300_000,
   })
 
+  const { data: churnedCompaniesData } = useQuery({
+    queryKey: ['churned-companies', selectedMonth],
+    queryFn: () => api.getMetricDrilldown('churn_mrr', selectedMonth),
+    staleTime: 0,
+  })
+
   const summary = summaryData?.data
+  const churnedCompanies = churnedCompaniesData?.data?.drivers || []
   const churnRates = churnRatesData?.data
   const history = historyData?.data || []
   const anomalies = anomaliesData?.data || []
@@ -157,6 +164,54 @@ export default function DashboardPage() {
           <KPICard label="Expansion Rate" value={formatPercent(summary?.expansion_rate || 0, 1)} subValue="MRR from expansion" color="#34d399" onClick={() => setDrilldownMetric(drilldownMetric === 'expansion_mrr' ? null : 'expansion_mrr')} />
           <KPICard label="Churned MRR" value={formatCurrency(Math.abs(summary?.churned_mrr || 0), 'USD', true)} subValue={(summary?.churned_customers || 0) + ' customer(s)'} color="#ef4444" onClick={() => setDrilldownMetric(drilldownMetric === 'churn_mrr' ? null : 'churn_mrr')} />
           <KPICard label="Active Customers" value={String(summary?.active_customers || 0)} subValue={'Rev churn ' + formatPercent(summary?.revenue_churn_rate || 0, 1)} />
+        </div>
+      )}
+
+      {/* Churned This Month Panel */}
+      {churnedCompanies.length > 0 && (
+        <div className="card p-0 overflow-hidden border border-churn-red border-opacity-30">
+          <div className="px-4 py-3 border-b border-border flex items-center gap-3 bg-red-950 bg-opacity-20">
+            <TrendingDown className="w-4 h-4 text-churn-red flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-semibold text-text-primary">
+                Churned — {formatMonthLabel(selectedMonth)}
+              </span>
+              <span className="ml-3 text-xs text-text-muted">
+                {churnedCompanies.length} company · {formatCurrency(Math.abs(churnedCompaniesData?.data?.total || 0), 'USD', true)} MRR lost
+              </span>
+            </div>
+            <span className="text-xs text-text-muted hidden sm:block">
+              Previous month invoiced, this month no invoice
+            </span>
+          </div>
+          <div className="overflow-x-auto max-h-64 overflow-y-auto">
+            <table className="w-full">
+              <thead className="sticky top-0 bg-card z-10">
+                <tr className="border-b border-border">
+                  <th className="table-header text-left">#</th>
+                  <th className="table-header text-left">Company</th>
+                  <th className="table-header text-right">MRR Lost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...churnedCompanies]
+                  .sort((a, b) => a.amount - b.amount)
+                  .map((c, i) => (
+                    <tr key={i} className="border-b border-border hover:bg-surface transition-colors">
+                      <td className="table-cell text-text-muted text-xs w-8">{i + 1}</td>
+                      <td className="table-cell">
+                        <Link href={`/companies/${c.company_id}`} className="text-sm text-text-secondary hover:text-mrr-green transition-colors">
+                          {c.company_name}
+                        </Link>
+                      </td>
+                      <td className="table-cell text-right text-sm font-medium text-churn-red">
+                        {formatCurrency(Math.abs(c.amount), 'USD', true)}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

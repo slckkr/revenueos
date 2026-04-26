@@ -5,10 +5,22 @@ import { useState, useEffect } from 'react'
 import { useThemeStore, applyTheme } from '@/lib/theme'
 
 function ThemeInitializer() {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    // Rehydrate once, then apply the resolved theme
+    useThemeStore.persist.rehydrate()
+    const theme = useThemeStore.getState().theme
+    applyTheme(theme)
+    setMounted(true)
+  }, [])
+
+  // Subscribe to future theme changes after mount
   const theme = useThemeStore((s) => s.theme)
   useEffect(() => {
-    applyTheme(theme)
-  }, [theme])
+    if (mounted) applyTheme(theme)
+  }, [theme, mounted])
+
   return null
 }
 
@@ -18,7 +30,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 60 * 1000, // 1 minute
+            staleTime: 60 * 1000,
             retry: 1,
           },
         },

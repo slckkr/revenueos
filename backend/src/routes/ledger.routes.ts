@@ -10,14 +10,23 @@ const router = Router()
 // GET /ledger — filtered ledger entries
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.tenantId
-  const { month, company_id, event_type, page = '1', limit = '100' } = req.query as Record<string, string>
+  const { month, company_id, event_type, page = '1', limit = '100', sort = 'month', order = 'desc' } = req.query as Record<string, string>
+  const ascending = order === 'asc'
+  const DIRECT_SORTS: Record<string, true> = { month: true, event_type: true, amount_original: true, amount_reporting: true }
 
   let query = supabase
     .from('revenue_ledger')
     .select('*, companies(name), products(name)', { count: 'exact' })
     .eq('tenant_id', tenantId)
-    .order('month', { ascending: false })
-    .order('amount_reporting', { ascending: false })
+
+  if (DIRECT_SORTS[sort]) {
+    query = query.order(sort, { ascending })
+    if (sort !== 'amount_reporting') query = query.order('amount_reporting', { ascending: false })
+  } else if (sort === 'company_name') {
+    query = query.order('name', { referencedTable: 'companies', ascending })
+  } else {
+    query = query.order('month', { ascending: false }).order('amount_reporting', { ascending: false })
+  }
 
   if (month) query = query.eq('month', `${month}-01`.replace(/(-01)+$/, '-01'))
   if (company_id) query = query.eq('company_id', company_id)

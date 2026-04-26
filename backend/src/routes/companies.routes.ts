@@ -40,7 +40,10 @@ const updateSchema = Joi.object({
 // GET /companies
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.tenantId
-  const { search, segment, page = '1', limit = '50', sort = 'mrr' } = req.query as Record<string, string>
+  const { search, segment, status, page = '1', limit = '50', sort = 'mrr', order = 'desc' } = req.query as Record<string, string>
+  const ascending = order === 'asc'
+  const VALID_SORTS = ['name', 'segment', 'country', 'industry', 'mrr', 'arr', 'churn_risk']
+  const sortField = VALID_SORTS.includes(sort) ? sort : 'mrr'
 
   let query = supabase
     .from('companies')
@@ -49,9 +52,8 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
 
   if (search) query = query.ilike('name', `%${search}%`)
   if (segment) query = query.eq('segment', segment)
+  if (status) query = query.eq('status', status)
 
-  // Fetch all matching companies (for MRR merge) but apply limit only if not sorting by MRR
-  // When sorting by MRR we need all companies to sort before paginating
   const { data: allData, error, count } = await query.order('name')
   if (error) throw new AppError(error.message, 500, 'DB_ERROR')
 
@@ -77,16 +79,39 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
+  // Fetch churn risk scores if sorting by churn_risk
+  let churnMap: Record<string, number> = {}
+  if (sortField === 'churn_risk') {
+    const { data: churnRows } = await supabase
+      .from('ml_scores')
+      .select('company_id, score_value')
+      .eq('tenant_id', tenantId)
+      .eq('score_type', 'churn_risk')
+    for (const row of churnRows || []) {
+      churnMap[row.company_id] = row.score_value
+    }
+  }
+
   let companies = (allData || []).map((c) => ({
     ...c,
     current_mrr: mrrMap[c.id] || 0,
     current_mrr_month: latestMonthRow?.month || null,
   }))
 
-  // Sort by MRR descending (default) or by name
-  if (sort === 'mrr') {
-    companies.sort((a, b) => b.current_mrr - a.current_mrr)
-  }
+  companies.sort((a, b) => {
+    let av: string | number, bv: string | number
+    switch (sortField) {
+      case 'name':     av = (a.name || '').toLowerCase();     bv = (b.name || '').toLowerCase();     break
+      case 'segment':  av = a.segment || '';                  bv = b.segment || '';                  break
+      case 'country':  av = (a.country || '').toLowerCase();  bv = (b.country || '').toLowerCase();  break
+      case 'industry': av = (a.industry || '').toLowerCase(); bv = (b.industry || '').toLowerCase(); break
+      case 'churn_risk': av = churnMap[a.id] ?? -1;           bv = churnMap[b.id] ?? -1;             break
+      default:         av = a.current_mrr;                    bv = b.current_mrr
+    }
+    if (av < bv) return ascending ? -1 : 1
+    if (av > bv) return ascending ? 1 : -1
+    return 0
+  })
 
   const pageNum = parseInt(page, 10)
   const limitNum = parseInt(limit, 10)

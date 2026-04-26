@@ -6,12 +6,34 @@ import { api, Product } from '@/lib/api'
 import { formatCurrency } from '@/lib/formatters'
 import { Badge } from '@/components/ui/Badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { Plus, X, Check, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, X, Check, Trash2, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ChevronsUpDown, Search } from 'lucide-react'
 
 const PRICING_MODELS = ['flat', 'tiered', 'usage', 'per-seat'] as const
 const PAGE_SIZES = [25, 50, 100, 200]
 const BILLING_PERIODS = ['monthly', 'annual', 'one_time'] as const
 const STATUSES = ['active', 'deprecated', 'beta'] as const
+
+type SortDir = 'asc' | 'desc'
+
+function SortTh({ label, field, sortBy, sortDir, onSort, className }: {
+  label: string; field: string; sortBy: string; sortDir: SortDir
+  onSort: (f: string) => void; className?: string
+}) {
+  const active = sortBy === field
+  return (
+    <th
+      className={`table-header cursor-pointer select-none hover:text-text-primary transition-colors ${className || ''}`}
+      onClick={() => onSort(field)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active
+          ? sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+          : <ChevronsUpDown className="w-3 h-3 opacity-40" />}
+      </span>
+    </th>
+  )
+}
 
 function StatusBadge({ status }: { status?: string }) {
   const map: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
@@ -31,6 +53,20 @@ export default function ProductsPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(25)
+  const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+
+  function handleSort(field: string) {
+    if (sortBy === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(field)
+      setSortDir(field === 'default_price' ? 'desc' : 'asc')
+    }
+    setPage(1)
+  }
+
   const [form, setForm] = useState<Partial<Product>>({
     name: '',
     sku: '',
@@ -43,8 +79,9 @@ export default function ProductsPage() {
   })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['products', page, limit],
-    queryFn: () => api.getProducts({ page, limit }),
+    queryKey: ['products', page, limit, sortBy, sortDir, search],
+    queryFn: () => api.getProducts({ page, limit, sort: sortBy, order: sortDir, search: search || undefined }),
+    placeholderData: (prev) => prev,
   })
   const products = data?.data || []
   const total = data?.meta?.total || 0
@@ -103,6 +140,12 @@ export default function ProductsPage() {
         </div>
       </div>
 
+      {/* Search */}
+      <div className="relative max-w-xs">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+        <input className="input w-full pl-9" placeholder="Search products..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+      </div>
+
       {/* Create form */}
       {showCreate && (
         <div className="card border border-mrr-green space-y-3">
@@ -132,13 +175,13 @@ export default function ProductsPage() {
           <thead className="border-b border-border">
             <tr>
               <th className="table-header w-10"><input type="checkbox" className="rounded" checked={selectedIds.size === products.length && products.length > 0} onChange={toggleSelectAll} /></th>
-              <th className="table-header">Product</th>
-              <th className="table-header">SKU</th>
-              <th className="table-header">Billing</th>
-              <th className="table-header">Pricing</th>
-              <th className="table-header">Category</th>
-              <th className="table-header text-right">Default Price</th>
-              <th className="table-header">Status</th>
+              <SortTh label="Product"       field="name"          sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="SKU"           field="sku"           sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Billing"       field="billing_period" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Pricing"       field="pricing_model"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Category"      field="category"       sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Default Price" field="default_price"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} className="text-right" />
+              <SortTh label="Status"        field="status"         sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
               <th className="table-header"></th>
             </tr>
           </thead>

@@ -271,11 +271,7 @@ class ImportExcelService {
       const uniqueCompanyNames = [...new Set(parsed.map((r) => r.companyName.toLowerCase()))]
       const companyMap = await this.batchUpsertCompanies(tenantId, uniqueCompanyNames, parsed.map((r) => r.companyName))
 
-      // ── BATCH STEP 3: Resolve products in bulk ───────────────────────────────
-      const uniqueProductNames = [...new Set(parsed.filter((r) => r.productName).map((r) => r.productName!.toLowerCase()))]
-      const productMap = await this.batchUpsertProducts(tenantId, uniqueProductNames, parsed.filter((r) => r.productName).map((r) => r.productName!))
-
-      // ── BATCH STEP 4: Check existing invoices in bulk ────────────────────────
+      // ── BATCH STEP 3: Check existing invoices in bulk ────────────────────────
       const allInvoiceNumbers = parsed.map((r) => r.invoiceNumber)
       const { data: existingInvoices } = await supabase
         .from('invoices')
@@ -286,7 +282,7 @@ class ImportExcelService {
       const existingMap = new Map<string, string>()
       for (const inv of existingInvoices || []) existingMap.set(inv.invoice_number, inv.id)
 
-      // ── BATCH STEP 5: Build invoice payloads ─────────────────────────────────
+      // ── BATCH STEP 4: Build invoice payloads ─────────────────────────────────
       const toInsert: Record<string, unknown>[] = []
       const toUpsert: Record<string, unknown>[] = []
 
@@ -294,11 +290,9 @@ class ImportExcelService {
         const companyId = companyMap.get(r.companyName.toLowerCase())
         if (!companyId) { errors.push({ row: r.rowNum, message: `Row ${r.rowNum}: Could not resolve company "${r.companyName}"` }); continue }
 
-        const productId = r.productName ? productMap.get(r.productName.toLowerCase()) ?? null : null
         const payload = {
           tenant_id: tenantId,
           company_id: companyId,
-          product_id: productId,
           invoice_number: r.invoiceNumber,
           issue_date: r.issueDate,
           service_period_start: r.serviceStart,
@@ -319,7 +313,7 @@ class ImportExcelService {
         }
       }
 
-      // ── BATCH STEP 6: Insert / upsert in chunks of 500 ───────────────────────
+      // ── BATCH STEP 5: Insert / upsert in chunks of 500 ───────────────────────
       const CHUNK = 500
       for (let i = 0; i < toInsert.length; i += CHUNK) {
         const chunk = toInsert.slice(i, i + CHUNK)

@@ -6,6 +6,7 @@ import { Upload, FileSpreadsheet, FileText, FileCode, CheckCircle, XCircle, Load
 import { api, type ConflictPreview, type ImportResult } from '@/lib/api'
 import { formatCurrency, formatRelativeTime } from '@/lib/formatters'
 import { Badge } from '@/components/ui/Badge'
+import { MappingWizard } from './MappingWizard'
 import clsx from 'clsx'
 
 function defaultRebuildRange() {
@@ -30,7 +31,10 @@ export default function ImportPage() {
   const [rebuildResult, setRebuildResult] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
-  // Conflict flow state
+  // Mapping wizard state
+  const [wizardFile, setWizardFile] = useState<File | null>(null)
+
+  // Conflict flow state (used only for XML)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [conflictData, setConflictData] = useState<ConflictPreview | null>(null)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
@@ -84,6 +88,7 @@ export default function ImportPage() {
     setImportError(null)
     setConflictData(null)
     setPendingFile(null)
+    setWizardFile(null)
 
     if (selectedType === 'xml') {
       // XML has no conflict detection — import directly
@@ -100,24 +105,8 @@ export default function ImportPage() {
       return
     }
 
-    // Excel/CSV: preview first
-    setIsPreviewing(true)
-    try {
-      const res = await api.previewImport(file, selectedType) as any
-      const preview: ConflictPreview = res?.data
-      if (preview.conflicts.length > 0) {
-        // Show conflict dialog
-        setPendingFile(file)
-        setConflictData(preview)
-      } else {
-        // No conflicts — import directly with 'skip' mode
-        await runImport(file, 'skip')
-      }
-    } catch (e: any) {
-      setImportError(e.message)
-    } finally {
-      setIsPreviewing(false)
-    }
+    // Excel/CSV: open AI mapping wizard
+    setWizardFile(file)
   }
 
   const runImport = async (file: File, conflictMode: 'skip' | 'overwrite') => {
@@ -144,7 +133,7 @@ export default function ImportPage() {
   }
 
   const currentType = importTypes.find((t) => t.type === selectedType)!
-  const busy = isPreviewing || isImporting
+  const busy = isPreviewing || isImporting || !!wizardFile
 
   return (
     <div className="p-6 space-y-6">
@@ -223,7 +212,21 @@ export default function ImportPage() {
         )}
       </div>
 
-      {/* Conflict dialog */}
+      {/* AI Mapping Wizard */}
+      {wizardFile && (
+        <MappingWizard
+          file={wizardFile}
+          type={selectedType as 'excel' | 'csv'}
+          onDone={(result) => {
+            setImportResult(result)
+            setWizardFile(null)
+            qc.invalidateQueries({ queryKey: ['import-files'] })
+          }}
+          onCancel={() => setWizardFile(null)}
+        />
+      )}
+
+      {/* Conflict dialog (XML only path — kept for legacy) */}
       {conflictData && pendingFile && (
         <div className="bg-warning bg-opacity-10 border border-warning border-opacity-40 rounded-lg p-5 space-y-4">
           <div className="flex items-start gap-3">

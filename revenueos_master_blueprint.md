@@ -4206,6 +4206,191 @@ GET    /api/reports/board-snapshot?month=X              → Board snapshot
 | Versiyon | Tarih | Değişiklik |
 |----------|-------|-----------|
 | v2.0 | 2026-03-16 | Master Blueprint oluşturuldu |
+| v2.1 | 2026-04-26 | AI Data Mapping Wizard, Hydration fix, Bulk delete, Sorting/Filtering |
+| v2.2 | 2026-04-27 | Notification UI fix, Import auto-rebuild, Dashboard churn panel |
+
+---
+
+# UYGULANAN DEĞİŞİKLİKLER KAYIT DEFTERİ
+
+## v2.1 — 2026-04-26
+
+### 1. AI Data Mapping Wizard (Import Center)
+
+**Amaç:** Farklı kaynaklardan gelen Excel/CSV dosyalarındaki kolonların, RevenueOS'un iç veri modeline otomatik ve doğrulukla eşlenmesini sağlamak.
+
+**Yeni Dosyalar:**
+- `backend/src/services/mapping.service.ts` — Levenshtein fuzzy matching, TR/EN alias dictionary, data type detection, confidence scoring (0–100)
+- `backend/src/routes/mapping.routes.ts` — `POST /mapping/analyze`, `GET /mapping/templates`, `POST /mapping/templates`, `DELETE /mapping/templates/:id`
+- `frontend/src/app/(app)/import/MappingWizard.tsx` — 5 adımlı wizard: analyzing → mapping → preview → importing → done
+- `supabase/migrations/012_mapping_templates.sql` — `mapping_templates` tablosu (tenant_id, name, source_system, column_map JSONB)
+
+**Değiştirilen Dosyalar:**
+- `backend/src/routes/index.ts` — `/mapping` route eklendi
+- `frontend/src/lib/api.ts` — `analyzeMapping`, `getMappingTemplates`, `saveMappingTemplate`, `deleteMappingTemplate` metodları eklendi; `importExcel`, `importCsv`, `previewImport` metodlarına `mapping` parametresi eklendi
+- `frontend/src/app/(app)/import/page.tsx` — Excel/CSV için MappingWizard tetikleniyor; XML direkt import akışında kalıyor
+
+**Teknik Detaylar:**
+- Algoritma: Tam eşleşme (95 puan) → içerik eşleşmesi (78 puan) → Levenshtein benzerlik ≥0.7 (70 puana kadar)
+- 8 hedef alan: company_name, invoice_number, issue_date, amount, currency, service_start, service_end, product
+- Şablonlar Supabase'de JSONB olarak saklanır, yeniden kullanılabilir
+- Mapping `JSON.stringify` ile FormData üzerinden backend'e iletilir
+
+---
+
+### 2. React Hydration Error Fix
+
+**Sorun:** "Text content does not match server-rendered HTML. Server: '' Client: 'Expansion'" hatası — Zustand persist middleware'inin SSR ile çakışması.
+
+**Değiştirilen Dosyalar:**
+- `frontend/src/lib/theme.ts`:
+  - SSR-safe storage eklendi (`createJSONStorage` ile `window` undefined kontrolü)
+  - `skipHydration: true` ile persist yapılandırıldı
+  - `applyTheme` fonksiyonuna `if (typeof window === 'undefined') return` guard eklendi
+- `frontend/src/app/providers.tsx`:
+  - `ThemeInitializer` bileşeni `mounted` state pattern ile yeniden yazıldı
+  - Tek ve merkezi `rehydrate()` çağrısı
+- `frontend/src/components/layout/Sidebar.tsx`:
+  - `mounted` state eklendi; tema bağımlı render'lar client-only
+  - `suppressHydrationWarning` toggle butonuna eklendi
+  - `pathname` null guard: `!!pathname && ...`
+
+---
+
+### 3. Batch Insert Bug Fix (product_id)
+
+**Sorun:** "Batch insert error: Could not find the 'product_id' column of 'invoices' in the schema cache" — `invoices` tablosunun `product_id` kolonu yoktu.
+
+**Değiştirilen Dosyalar:**
+- `backend/src/services/import-excel.service.ts`:
+  - `product_id: productId` fatura insert payload'ından kaldırıldı
+  - "BATCH STEP 3: Resolve products in bulk" adımı tamamen silindi
+  - Adım numaraları güncellendi (3→conflict check, 4→build payloads, 5→insert)
+
+---
+
+### 4. Bulk Delete (Toplu Silme)
+
+**Amaç:** Tüm liste sayfalarında çoklu kayıt seçip toplu silme.
+
+**Değiştirilen Sayfalar:** Companies, Products, Ledger, Events, Deals, Proposals, Contracts, Activities
+
+**Özellikler:**
+- Her satırda checkbox
+- "Tümünü seç" header checkbox
+- Seçili kayıt sayısını gösteren kırmızı "Delete Selected (N)" butonu
+- `POST /[entity]/bulk` DELETE endpoint'i (id array alır)
+
+---
+
+### 5. Sayfa Boyutu Seçici (Page Size Selector)
+
+**Amaç:** Tüm liste sayfalarında 25/50/100/200 kayıt/sayfa seçeneği.
+
+**Değiştirilen Sayfalar:** Companies, Products, Ledger, Events, Deals, Proposals, Contracts, Activities (8 sayfa)
+
+**Özellikler:**
+- Pagination footer'ında `<select>` dropdown: 25/50/100/200
+- Sayfa boyutu değişince page=1'e sıfırlanır
+- Backend parametresi olarak `limit` query param ile iletilir
+
+---
+
+## v2.2 — 2026-04-27
+
+### 6. Bildirim (Notification) UI Fix
+
+**Sorun:** Notification dropdown 320px genişliğinde (`w-80`) açılıyor, sidebar 224px (`w-56`) — dropdown ekranın soluna taşıyor ve sayfa yarım görünüyor.
+
+**Değiştirilen Dosyalar:**
+- `frontend/src/components/layout/NotificationBell.tsx`:
+  - Dropdown konumu `right-0` → `left-0` olarak değiştirildi
+  - Dropdown artık sidebar'ın sağ kenarından ana içerik alanına doğru açılıyor
+
+---
+
+### 7. Companies / Products / Ledger — Sıralama ve Filtreleme
+
+**Amaç:** Tüm liste sayfalarında tıklanabilir sütun başlıklarıyla sıralama (A→Z, Z→A, büyükten küçüğe, küçükten büyüğe).
+
+**Backend Değişiklikleri:**
+
+| Route | Yeni Parametreler | Sıralama Alanları |
+|-------|------------------|-------------------|
+| `GET /companies` | `sort`, `order`, `status` | `name`, `segment`, `country`, `industry`, `mrr`, `arr`, `churn_risk` |
+| `GET /products` | `sort`, `order`, `search` | `name`, `sku`, `billing_period`, `pricing_model`, `category`, `default_price`, `status` |
+| `GET /ledger` | `sort`, `order` | `month`, `company_name`, `event_type`, `amount_original`, `amount_reporting` |
+
+- `backend/src/routes/companies.routes.ts`: Tüm sıralama alanları in-memory sort ile işlenir; `churn_risk` için `ml_scores` tablosu ek sorgu; `status` filtresi eklendi
+- `backend/src/routes/products.routes.ts`: Supabase `.order()` ile native DB sort; `search` (ilike) filtresi eklendi
+- `backend/src/routes/ledger.routes.ts`: Direct kolon sort için Supabase `.order()`; `company_name` için `referencedTable: 'companies'`
+
+**Frontend Değişiklikleri:**
+- `frontend/src/lib/api.ts`: `getCompanies` (`status`, `order`), `getLedger` (`sort`, `order`), `getProducts` (`sort`, `order`, `search`) parametreleri eklendi
+- `frontend/src/app/(app)/companies/page.tsx`: `SortTh` bileşeni, `sortBy`/`sortDir` state, `handleSort` fonksiyonu; status filtresi backend'e iletiliyor
+- `frontend/src/app/(app)/products/page.tsx`: `SortTh` bileşeni, arama kutusu, sort state
+- `frontend/src/app/(app)/ledger/page.tsx`: `SortTh` bileşeni, sort state
+
+**UI:** Aktif sütunda yön oku (▲/▼), pasif sütunlarda gri `⇅` ikonu; tıklamada yön tersine döner.
+
+---
+
+### 8. Import Sonrası Otomatik Ledger Rebuild
+
+**Sorun:** Fatura import etmek yalnızca `invoices` tablosunu dolduruyor. Dashboard `revenue_ledger` tablosunu okuyor. Import sonrası rebuild manuel tetiklenmeden Şubat/Mart verileri dashboard'a yansımıyor.
+
+**Kök Neden & Bug:** `rebuildLedger` tüm faturaları tarih filtresi olmadan işliyordu → aynı range iki kez rebuild edilince Şubat/Mart için çift kayıt oluşuyordu.
+
+**Değiştirilen Dosyalar:**
+
+`backend/src/services/revenue-recognition.service.ts`:
+- Tarih aralığıyla örtüşen faturalar in-memory filter ile seçiliyor (`service_period_start ≤ toDate && service_period_end ≥ fromDate`)
+- Ay aralığı bazlı DELETE yerine `source_id` bazlı DELETE — aynı fatura birden fazla rebuild edilse de çift kayıt oluşmaz
+- 200'lü chunk'lar halinde toplu silme
+
+`backend/src/routes/import.routes.ts`:
+- `autoRebuildAfterImport(tenantId, fileId)` yardımcı fonksiyonu eklendi
+- Import edilen faturaların tarih aralığı (min service_period_start, max service_period_end veya issue_date) otomatik hesaplanır
+- Tenant ayarlarından `reporting_currency` ve `recognition_method` alınır
+- `rebuildLedger` + `deriveEventsRange` arka planda (fire-and-forget) tetiklenir
+- Excel, CSV ve XML import endpoint'lerinin tamamına eklendi
+- Response'a `rebuild_triggered: true` eklendi
+
+**Mevcut Veri İçin Tek Seferlik Adım:**
+```
+POST /ledger/rebuild
+{ "from_month": "2026-01", "to_month": "2026-03" }
+```
+
+---
+
+### 9. Dashboard — "Churned This Month" Paneli
+
+**Amaç:** Seçili ay için bir önceki ayda fatura kesilmiş ama bu ay fatura kesilmemiş (churn eden) şirketlerin adedini, ciro kaybını ve listesini dashboard'da belirgin şekilde göstermek.
+
+**Değiştirilen Dosyalar:**
+- `frontend/src/app/(app)/dashboard/page.tsx`:
+  - Yeni `churnedCompaniesData` query eklendi (`/metrics/churn_mrr/drilldown?month=...`, her zaman aktif)
+  - KPI kartlarının hemen altına "Churned — [Ay Adı]" paneli eklendi:
+    - Kırmızı çerçeveli card
+    - Header: Şirket sayısı + toplam MRR kaybı
+    - Tablo: #, Şirket adı (şirket sayfasına link), MRR kaybı (büyükten küçüğe sıralı)
+    - Scrollable (max 64 yükseklik), churned şirket yoksa görünmez
+
+**Teknik Not:** Veriler mevcut `GET /metrics/churn_mrr/drilldown` endpoint'inden gelir; yeni backend endpoint gerekmez. CHURN event'i = önceki ay MRR > 0 olan ama bu ay MRR = 0 olan şirket.
+
+---
+
+## Supabase Migration Geçmişi
+
+| Migration | Tarih | İçerik |
+|-----------|-------|--------|
+| 001_initial_schema | 2026-03 | Core tables |
+| 002_revenue_engine | 2026-03 | revenue_ledger, revenue_events |
+| 003-009 | 2026-03 | Additional entities |
+| 010_security_fixes | 2026-04 | RLS policies, security hardening |
+| 011_security_warnings | 2026-04 | Additional security warnings |
+| 012_mapping_templates | 2026-04 | AI mapping template storage |
 
 ---
 *Bu doküman RevenueOS geliştirme ekibi için oluşturulmuştur.*

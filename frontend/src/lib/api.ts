@@ -135,12 +135,14 @@ export const api = {
     }>(`/metrics/churn-rates?months=${months}`),
 
   // Companies
-  getCompanies: (params?: { search?: string; segment?: string; page?: number; sort?: string; limit?: number }) => {
+  getCompanies: (params?: { search?: string; segment?: string; status?: string; page?: number; sort?: string; order?: string; limit?: number }) => {
     const qs = new URLSearchParams()
     if (params?.search) qs.set('search', params.search)
     if (params?.segment) qs.set('segment', params.segment)
+    if (params?.status) qs.set('status', params.status)
     if (params?.page) qs.set('page', String(params.page))
     if (params?.sort) qs.set('sort', params.sort)
+    if (params?.order) qs.set('order', params.order)
     if (params?.limit) qs.set('limit', String(params.limit))
     return fetchJSON<{ success: true; data: Company[]; meta: { total: number; page: number; limit: number } }>(
       `/companies?${qs}`
@@ -161,13 +163,15 @@ export const api = {
     fetchJSON<{ success: true; deleted: number }>('/companies/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
   // Ledger
-  getLedger: (params?: { month?: string; company_id?: string; event_type?: string; page?: number; limit?: number }) => {
+  getLedger: (params?: { month?: string; company_id?: string; event_type?: string; page?: number; limit?: number; sort?: string; order?: string }) => {
     const qs = new URLSearchParams()
     if (params?.month) qs.set('month', params.month)
     if (params?.company_id) qs.set('company_id', params.company_id)
     if (params?.event_type) qs.set('event_type', params.event_type)
     if (params?.page) qs.set('page', String(params.page))
     if (params?.limit) qs.set('limit', String(params.limit))
+    if (params?.sort) qs.set('sort', params.sort)
+    if (params?.order) qs.set('order', params.order)
     return fetchJSON<{ success: true; data: LedgerEntry[]; meta: { total: number } }>(
       `/ledger?${qs}`
     )
@@ -204,13 +208,13 @@ export const api = {
   // Import
   getImportFiles: () =>
     fetchJSON<{ success: true; data: ImportFile[] }>('/import/files'),
-  importExcel: (file: File, conflictMode: 'skip' | 'overwrite' = 'skip') =>
-    uploadFile('/import/excel', file, { conflict_mode: conflictMode }),
-  importCsv: (file: File, conflictMode: 'skip' | 'overwrite' = 'skip') =>
-    uploadFile('/import/csv', file, { conflict_mode: conflictMode }),
+  importExcel: (file: File, conflictMode: 'skip' | 'overwrite' = 'skip', mapping?: Record<string, string>) =>
+    uploadFile('/import/excel', file, { conflict_mode: conflictMode, ...(mapping ? { mapping: JSON.stringify(mapping) } : {}) }),
+  importCsv: (file: File, conflictMode: 'skip' | 'overwrite' = 'skip', mapping?: Record<string, string>) =>
+    uploadFile('/import/csv', file, { conflict_mode: conflictMode, ...(mapping ? { mapping: JSON.stringify(mapping) } : {}) }),
   importXml: (file: File) => uploadFile('/import/xml', file),
-  previewImport: (file: File, source: 'excel' | 'csv') =>
-    uploadFile('/import/preview', file, { source }),
+  previewImport: (file: File, source: 'excel' | 'csv', mapping?: Record<string, string>) =>
+    uploadFile('/import/preview', file, { source, ...(mapping ? { mapping: JSON.stringify(mapping) } : {}) }),
   deleteImport: (id: string) =>
     fetchJSON<{ success: true; data: { message: string; deleted_invoices: number } }>(
       `/import/files/${id}`,
@@ -218,10 +222,13 @@ export const api = {
     ),
 
   // Products
-  getProducts: (params?: { page?: number; limit?: number }) => {
+  getProducts: (params?: { page?: number; limit?: number; sort?: string; order?: string; search?: string }) => {
     const qs = new URLSearchParams()
     if (params?.page) qs.set('page', String(params.page))
     if (params?.limit) qs.set('limit', String(params.limit))
+    if (params?.sort) qs.set('sort', params.sort)
+    if (params?.order) qs.set('order', params.order)
+    if (params?.search) qs.set('search', params.search)
     const q = qs.toString()
     return fetchJSON<{ success: true; data: Product[]; meta: { total: number } }>(`/products${q ? `?${q}` : ''}`)
   },
@@ -618,6 +625,19 @@ export const api = {
   // Phase 6: Board Snapshot
   getBoardSnapshot: (month?: string) =>
     fetchJSON<{ success: true; data: BoardSnapshot }>(`/reports/board-snapshot${month ? `?month=${month}` : ''}`),
+
+  // AI Mapping
+  analyzeMapping: (file: File) =>
+    uploadFile('/mapping/analyze', file) as Promise<{ success: true; data: AnalyzeResult }>,
+  getMappingTemplates: () =>
+    fetchJSON<{ success: true; data: MappingTemplate[] }>('/mapping/templates'),
+  saveMappingTemplate: (name: string, sourceSystem: string | null, columnMap: Record<string, string>) =>
+    fetchJSON<{ success: true; data: MappingTemplate }>('/mapping/templates', {
+      method: 'POST',
+      body: JSON.stringify({ name, source_system: sourceSystem, column_map: columnMap }),
+    }),
+  deleteMappingTemplate: (id: string) =>
+    fetchJSON(`/mapping/templates/${id}`, { method: 'DELETE' }),
 }
 
 // ─── Types (mirroring backend) ────────────────────────────────────────────────
@@ -1304,6 +1324,33 @@ export interface BenchmarkRow {
 export interface BenchmarkCohort {
   key: string
   label: string
+}
+
+export interface ColumnInfo {
+  name: string
+  sample_values: string[]
+  detected_type: 'date' | 'number' | 'text'
+}
+
+export interface FieldSuggestion {
+  field: string
+  label: string
+  required: boolean
+  suggested_column: string | null
+  confidence: number
+}
+
+export interface AnalyzeResult {
+  columns: ColumnInfo[]
+  suggestions: FieldSuggestion[]
+}
+
+export interface MappingTemplate {
+  id: string
+  name: string
+  source_system: string | null
+  column_map: Record<string, string>
+  created_at: string
 }
 
 export interface BoardSnapshot {

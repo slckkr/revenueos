@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { Search, Building2, ChevronRight, ChevronLeft, Plus, Pencil, Trash2, CheckSquare } from 'lucide-react'
+import { Search, Building2, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, ChevronsUpDown, Plus, Pencil, Trash2 } from 'lucide-react'
 import { api, Company, ChurnRiskScore } from '@/lib/api'
 import { formatCurrency } from '@/lib/formatters'
 import { SegmentBadge, Badge } from '@/components/ui/Badge'
@@ -51,6 +51,28 @@ function formToPayload(f: FormState) {
   }
 }
 
+type SortDir = 'asc' | 'desc'
+
+function SortTh({ label, field, sortBy, sortDir, onSort, className }: {
+  label: string; field: string; sortBy: string; sortDir: SortDir
+  onSort: (f: string) => void; className?: string
+}) {
+  const active = sortBy === field
+  return (
+    <th
+      className={`table-header cursor-pointer select-none hover:text-text-primary transition-colors ${className || ''}`}
+      onClick={() => onSort(field)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active
+          ? sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+          : <ChevronsUpDown className="w-3 h-3 opacity-40" />}
+      </span>
+    </th>
+  )
+}
+
 function ChurnRiskBadge({ score }: { score?: number }) {
   if (score === undefined || score === null) return <span className="text-text-muted text-xs">—</span>
   if (score >= 70) return <span className="text-xs font-medium text-churn-red bg-red-950 px-2 py-0.5 rounded">{Math.round(score)}</span>
@@ -73,6 +95,18 @@ export default function CompaniesPage() {
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(25)
+  const [sortBy, setSortBy] = useState('mrr')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+
+  function handleSort(field: string) {
+    if (sortBy === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(field)
+      setSortDir(['name', 'segment', 'country', 'industry'].includes(field) ? 'asc' : 'desc')
+    }
+    setPage(1)
+  }
 
   const [formOpen, setFormOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Company | null>(null)
@@ -83,8 +117,8 @@ export default function CompaniesPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['companies', search, segment, status, page, limit],
-    queryFn: () => api.getCompanies({ search: search || undefined, segment: segment || undefined, page, limit, sort: 'mrr' }),
+    queryKey: ['companies', search, segment, status, page, limit, sortBy, sortDir],
+    queryFn: () => api.getCompanies({ search: search || undefined, segment: segment || undefined, status: status || undefined, page, limit, sort: sortBy, order: sortDir }),
     placeholderData: (prev) => prev,
   })
 
@@ -200,13 +234,13 @@ export default function CompaniesPage() {
               <th className="table-header w-10">
                 <input type="checkbox" className="rounded" checked={selectedIds.size === companies.length && companies.length > 0} onChange={toggleSelectAll} />
               </th>
-              <th className="table-header">Company</th>
-              <th className="table-header">Segment</th>
-              <th className="table-header">Country</th>
-              <th className="table-header">Industry</th>
-              <th className="table-header text-right">Churn Risk</th>
-              <th className="table-header text-right">MRR</th>
-              <th className="table-header text-right">ARR</th>
+              <SortTh label="Company"    field="name"        sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Segment"    field="segment"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Country"    field="country"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Industry"   field="industry"    sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Churn Risk" field="churn_risk"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} className="text-right" />
+              <SortTh label="MRR"        field="mrr"         sortBy={sortBy} sortDir={sortDir} onSort={handleSort} className="text-right" />
+              <SortTh label="ARR"        field="arr"         sortBy={sortBy} sortDir={sortDir} onSort={handleSort} className="text-right" />
               <th className="table-header w-20" />
             </tr>
           </thead>

@@ -2,12 +2,34 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Check, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 import { api, LedgerEntry } from '@/lib/api'
 import { formatCurrency, formatMonth } from '@/lib/formatters'
 import { EventBadge } from '@/components/ui/Badge'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+
+type SortDir = 'asc' | 'desc'
+
+function SortTh({ label, field, sortBy, sortDir, onSort, className }: {
+  label: string; field: string; sortBy: string; sortDir: SortDir
+  onSort: (f: string) => void; className?: string
+}) {
+  const active = sortBy === field
+  return (
+    <th
+      className={`table-header cursor-pointer select-none hover:text-text-primary transition-colors ${className || ''}`}
+      onClick={() => onSort(field)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active
+          ? sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+          : <ChevronsUpDown className="w-3 h-3 opacity-40" />}
+      </span>
+    </th>
+  )
+}
 
 const EVENT_TYPES = ['NEW', 'EXPANSION', 'CONTRACTION', 'CHURN', 'REACTIVATION', 'PRICE_INCREASE']
 const PAGE_SIZES = [25, 50, 100, 200]
@@ -33,6 +55,18 @@ export default function LedgerPage() {
   const [companyId, setCompanyId] = useState('')
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(25)
+  const [sortBy, setSortBy] = useState('month')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+
+  function handleSort(field: string) {
+    if (sortBy === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(field)
+      setSortDir(field === 'company_name' || field === 'event_type' ? 'asc' : 'desc')
+    }
+    setPage(1)
+  }
 
   const [editId, setEditId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<LedgerEntry>>({})
@@ -58,8 +92,8 @@ export default function LedgerPage() {
   const products = productsData?.data || []
 
   const { data, isLoading } = useQuery({
-    queryKey: ['ledger', month, eventType, companyId, page, limit],
-    queryFn: () => api.getLedger({ month: month || undefined, event_type: eventType || undefined, company_id: companyId || undefined, page, limit }),
+    queryKey: ['ledger', month, eventType, companyId, page, limit, sortBy, sortDir],
+    queryFn: () => api.getLedger({ month: month || undefined, event_type: eventType || undefined, company_id: companyId || undefined, page, limit, sort: sortBy, order: sortDir }),
     placeholderData: (prev) => prev,
   })
 
@@ -155,13 +189,13 @@ export default function LedgerPage() {
           <thead className="border-b border-border">
             <tr>
               <th className="table-header w-10"><input type="checkbox" className="rounded" checked={selectedIds.size === entries.length && entries.length > 0} onChange={toggleSelectAll} /></th>
-              <th className="table-header">Month</th>
-              <th className="table-header">Company</th>
+              <SortTh label="Month"     field="month"          sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Company"   field="company_name"   sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
               <th className="table-header">Product</th>
-              <th className="table-header">Event</th>
-              <th className="table-header">Original</th>
+              <SortTh label="Event"     field="event_type"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Original"  field="amount_original" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
               <th className="table-header">FX Rate</th>
-              <th className="table-header">Reporting</th>
+              <SortTh label="Reporting" field="amount_reporting" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
               <th className="table-header">Method</th>
               <th className="table-header w-20" />
             </tr>

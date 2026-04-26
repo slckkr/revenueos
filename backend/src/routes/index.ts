@@ -40,6 +40,7 @@ import churnRiskRoutes from './churn-risk.routes'
 import forecastRoutes from './forecast.routes'
 import benchmarksRoutes from './benchmarks.routes'
 import reportsRoutes from './reports.routes'
+import mappingRoutes from './mapping.routes'
 
 const router = Router()
 
@@ -98,5 +99,6 @@ router.use('/churn-risk',        churnRiskRoutes)
 router.use('/forecast',          forecastRoutes)
 router.use('/benchmarks',        benchmarksRoutes)
 router.use('/reports',           reportsRoutes)
+router.use('/mapping',           mappingRoutes)
 
 export default router

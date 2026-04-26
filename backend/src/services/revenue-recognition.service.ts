@@ -26,16 +26,8 @@ class RevenueRecognitionService {
 
     logger.info(`Rebuilding ledger ${fromMonth} → ${toMonth} [${method}]`)
 
-    // Delete existing ledger entries for the period
-    await supabase
-      .from('revenue_ledger')
-      .delete()
-      .eq('tenant_id', tenantId)
-      .gte('month', fromDate)
-      .lte('month', toDate)
-
-    // Fetch invoices whose service period overlaps with our rebuild range
-    const { data: invoices, error } = await supabase
+    // Fetch all non-void invoices for this tenant
+    const { data: allInvoices, error } = await supabase
       .from('invoices')
       .select('*')
       .eq('tenant_id', tenantId)
@@ -43,10 +35,33 @@ class RevenueRecognitionService {
 
     if (error) throw new Error(error.message)
 
+    // Filter to invoices whose effective period overlaps with [fromDate, toDate]
+    const invoices = (allInvoices || []).filter((inv) => {
+      const start = inv.service_period_start || inv.issue_date
+      const end   = inv.service_period_end   || inv.issue_date
+      return start <= toDate && end >= fromDate
+    })
+
+    if (invoices.length === 0) {
+      logger.info('No invoices found overlapping rebuild range — nothing to process')
+      return { processed: 0, errors: 0 }
+    }
+
+    // Delete existing ledger entries for these specific invoices (by source_id, all months)
+    // This avoids duplicate entries when the same invoice is rebuilt multiple times.
+    const sourceIds = invoices.map((inv) => inv.id)
+    for (let i = 0; i < sourceIds.length; i += 200) {
+      await supabase
+        .from('revenue_ledger')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .in('source_id', sourceIds.slice(i, i + 200))
+    }
+
     let processed = 0
     let errors = 0
 
-    for (const invoice of invoices || []) {
+    for (const invoice of invoices) {
       try {
         await this.processInvoice(invoice, tenantId, reportingCurrency, method)
         processed++
