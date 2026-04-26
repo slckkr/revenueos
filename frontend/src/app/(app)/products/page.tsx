@@ -295,7 +295,7 @@ export default function ProductsPage() {
       <ConfirmDialog
         open={bulkDeleteOpen}
         onClose={() => setBulkDeleteOpen(false)}
-        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
+        onConfirm={() => bulkDeleteMutation.mutate(Array.from(selectedIds))}
         title="Delete Selected Products"
         message={`Delete ${selectedIds.size} selected products? This cannot be undone.`}
         loading={bulkDeleteMutation.isPending}

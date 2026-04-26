@@ -415,7 +415,7 @@ export default function DealsPage() {
       <ConfirmDialog
         open={bulkDeleteOpen}
         onClose={() => setBulkDeleteOpen(false)}
-        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
+        onConfirm={() => bulkDeleteMutation.mutate(Array.from(selectedIds))}
         title="Delete Selected Deals"
         message={`Delete ${selectedIds.size} selected deals? This cannot be undone.`}
         loading={bulkDeleteMutation.isPending}

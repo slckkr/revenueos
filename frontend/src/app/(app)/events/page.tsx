@@ -384,7 +384,7 @@ export default function EventsPage() {
       <ConfirmDialog
         open={bulkDeleteOpen}
         onClose={() => setBulkDeleteOpen(false)}
-        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
+        onConfirm={() => bulkDeleteMutation.mutate(Array.from(selectedIds))}
         title="Delete Selected Events"
         message={`Delete ${selectedIds.size} selected events? This cannot be undone.`}
         loading={bulkDeleteMutation.isPending}
