@@ -143,26 +143,12 @@ router.post('/rebuild', asyncHandler(async (req: Request, res: Response) => {
     tenantId, from_month, to_month, reportingCurrency, method
   )
 
-  // Derive events for ALL months that actually have ledger data
-  // (accrual spreading may create ledger entries outside the rebuild range)
-  const { data: ledgerMonths } = await supabase
-    .from('revenue_ledger')
-    .select('month')
-    .eq('tenant_id', tenantId)
-    .order('month', { ascending: true })
-
-  const uniqueMonths = [...new Set((ledgerMonths || []).map((r: { month: string }) => r.month))]
-
-  if (uniqueMonths.length > 0) {
-    const firstMonth = uniqueMonths[0]
-    const lastMonth = uniqueMonths[uniqueMonths.length - 1]
-    logger.info(`Deriving events for full ledger range: ${firstMonth} → ${lastMonth}`)
-    await revenueEventsService.deriveEventsRange(tenantId, firstMonth, lastMonth)
-  } else {
-    await revenueEventsService.deriveEventsRange(
-      tenantId, `${from_month}-01`, `${to_month}-01`
-    )
-  }
+  // Derive events for the full range — use the rebuild range as the authoritative span
+  // (paginating the ledger for distinct months is expensive; the rebuild range covers it)
+  const firstMonth = `${from_month}-01`
+  const lastMonth  = lastDayOfMonthAsFirst(to_month)
+  logger.info(`Deriving events for full ledger range: ${firstMonth} → ${lastMonth}`)
+  await revenueEventsService.deriveEventsRange(tenantId, firstMonth, lastMonth)
 
   res.json({
     success: true,
@@ -172,5 +158,10 @@ router.post('/rebuild', asyncHandler(async (req: Request, res: Response) => {
     },
   })
 }))
+
+function lastDayOfMonthAsFirst(month: string): string {
+  // Returns the first day of the given YYYY-MM month (already the month start)
+  return `${month}-01`
+}
 
 export default router

@@ -46,17 +46,8 @@ async function autoRebuildAfterImport(tenantId: string, fileId: string): Promise
 
     await revenueRecognitionService.rebuildLedger(tenantId, fromMonth, toMonth, reportingCurrency, method)
 
-    // Derive events for full ledger range so all months are consistent
-    const { data: ledgerMonths } = await supabase
-      .from('revenue_ledger')
-      .select('month')
-      .eq('tenant_id', tenantId)
-      .order('month', { ascending: true })
-
-    const uniqueMonths = [...new Set((ledgerMonths || []).map((r: { month: string }) => r.month))]
-    if (uniqueMonths.length > 0) {
-      await revenueEventsService.deriveEventsRange(tenantId, uniqueMonths[0], uniqueMonths[uniqueMonths.length - 1])
-    }
+    // Derive events for the rebuild range (avoids Supabase 1000-row cap on ledger scan)
+    await revenueEventsService.deriveEventsRange(tenantId, `${fromMonth}-01`, `${toMonth}-01`)
 
     logger.info(`Auto-rebuild complete for import ${fileId}`)
   } catch (err) {
