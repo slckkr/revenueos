@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { Search, Building2, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, ChevronsUpDown, Plus, Pencil, Trash2 } from 'lucide-react'
+import { Search, Building2, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, ChevronsUpDown, Plus, Pencil, Trash2, Filter, X } from 'lucide-react'
 import { api, Company, ChurnRiskScore } from '@/lib/api'
 import { formatCurrency } from '@/lib/formatters'
 import { SegmentBadge, Badge } from '@/components/ui/Badge'
@@ -14,9 +14,47 @@ const SEGMENTS = ['', 'ENT', 'MID', 'SMB']
 const STATUSES = ['', 'active', 'churned', 'at-risk', 'prospect']
 const PAGE_SIZES = [25, 50, 100, 200]
 
+export type LifecycleStage = 'target' | 'prospect' | 'qualified' | 'hot_lead' | 'proposal' | 'customer' | 'at_risk' | 'churned'
+
+const LIFECYCLE_STAGES: LifecycleStage[] = ['target', 'prospect', 'qualified', 'hot_lead', 'proposal', 'customer', 'at_risk', 'churned']
+
+const LIFECYCLE_META: Record<LifecycleStage, { label: string; color: string; bg: string }> = {
+  target:    { label: 'Target',    color: 'text-text-muted',    bg: 'bg-surface' },
+  prospect:  { label: 'Prospect',  color: 'text-blue-400',      bg: 'bg-blue-950' },
+  qualified: { label: 'Qualified', color: 'text-violet-400',    bg: 'bg-violet-950' },
+  hot_lead:  { label: 'Hot Lead',  color: 'text-orange-400',    bg: 'bg-orange-950' },
+  proposal:  { label: 'Proposal',  color: 'text-yellow-400',    bg: 'bg-yellow-950' },
+  customer:  { label: 'Customer',  color: 'text-mrr-green',     bg: 'bg-emerald-950' },
+  at_risk:   { label: 'At Risk',   color: 'text-amber-400',     bg: 'bg-amber-950' },
+  churned:   { label: 'Churned',   color: 'text-churn-red',     bg: 'bg-red-950' },
+}
+
+function LifecycleBadge({ stage }: { stage?: LifecycleStage | null }) {
+  if (!stage) return <span className="text-text-muted text-xs">—</span>
+  const m = LIFECYCLE_META[stage]
+  return <span className={`text-xs font-medium px-2 py-0.5 rounded ${m.color} ${m.bg}`}>{m.label}</span>
+}
+
+const EMPLOYEE_RANGES = [
+  { label: 'Any size', min: undefined, max: undefined },
+  { label: '< 50',     min: undefined, max: 49 },
+  { label: '50–249',   min: 50,        max: 249 },
+  { label: '250–999',  min: 250,       max: 999 },
+  { label: '1 000+',   min: 1000,      max: undefined },
+]
+
+const NET_SALES_RANGES = [
+  { label: 'Any revenue', min: undefined, max: undefined },
+  { label: '< 10M TL',    min: undefined, max: 10_000_000 },
+  { label: '10M–100M TL', min: 10_000_000, max: 100_000_000 },
+  { label: '100M–1B TL',  min: 100_000_000, max: 1_000_000_000 },
+  { label: '1B+ TL',      min: 1_000_000_000, max: undefined },
+]
+
 type FormState = {
   // Basic
   name: string; domain: string; segment: string; status: string; hubspot_id: string
+  lifecycle_stage: string; strategic_notes: string
   // Location
   country: string; city: string; district: string; address: string; postal_code: string
   // Business
@@ -37,6 +75,7 @@ type FormState = {
 
 const EMPTY_FORM: FormState = {
   name: '', domain: '', segment: '', status: 'active', hubspot_id: '',
+  lifecycle_stage: '', strategic_notes: '',
   country: '', city: '', district: '', address: '', postal_code: '',
   industry: '', employee_count: '', annual_revenue: '',
   chamber_of_commerce: '', nace_description: '', nace_code: '',
@@ -54,6 +93,7 @@ function toFormState(c: Company): FormState {
   return {
     name: s(c.name), domain: s(c.domain), segment: s(c.segment),
     status: s(c.status) || 'active', hubspot_id: s(c.hubspot_id),
+    lifecycle_stage: s(c.lifecycle_stage), strategic_notes: s(c.strategic_notes),
     country: s(c.country), city: s(c.city), district: s(c.district),
     address: s(c.address), postal_code: s(c.postal_code),
     industry: s(c.industry), employee_count: n(c.employee_count), annual_revenue: n(c.annual_revenue),
@@ -78,6 +118,8 @@ function formToPayload(f: FormState) {
     domain: str(f.domain), segment: (f.segment || null) as 'SMB' | 'MID' | 'ENT' | null,
     status: (f.status || 'active') as 'active' | 'churned' | 'at-risk' | 'prospect',
     hubspot_id: str(f.hubspot_id),
+    lifecycle_stage: (f.lifecycle_stage || null) as LifecycleStage | null,
+    strategic_notes: str(f.strategic_notes),
     country: str(f.country), city: str(f.city), district: str(f.district),
     address: str(f.address), postal_code: str(f.postal_code),
     industry: str(f.industry), employee_count: int(f.employee_count), annual_revenue: num(f.annual_revenue),
@@ -136,6 +178,14 @@ export default function CompaniesPage() {
   const [search, setSearch] = useState('')
   const [segment, setSegment] = useState('')
   const [status, setStatus] = useState('')
+  const [lifecycleFilter, setLifecycleFilter] = useState('')
+  const [cityFilter, setCityFilter] = useState('')
+  const [industryFilter, setIndustryFilter] = useState('')
+  const [iso500Filter, setIso500Filter] = useState(false)
+  const [capitalTypeFilter, setCapitalTypeFilter] = useState('')
+  const [employeeRangeIdx, setEmployeeRangeIdx] = useState(0)
+  const [netSalesRangeIdx, setNetSalesRangeIdx] = useState(0)
+  const [showAdvFilters, setShowAdvFilters] = useState(false)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(25)
   const [sortBy, setSortBy] = useState('mrr')
@@ -158,10 +208,29 @@ export default function CompaniesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Company | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkLifecycleOpen, setBulkLifecycleOpen] = useState(false)
+  const [bulkLifecycleStage, setBulkLifecycleStage] = useState<LifecycleStage>('prospect')
+
+  const empRange = EMPLOYEE_RANGES[employeeRangeIdx]
+  const salesRange = NET_SALES_RANGES[netSalesRangeIdx]
 
   const { data, isLoading } = useQuery({
-    queryKey: ['companies', search, segment, status, page, limit, sortBy, sortDir],
-    queryFn: () => api.getCompanies({ search: search || undefined, segment: segment || undefined, status: status || undefined, page, limit, sort: sortBy, order: sortDir }),
+    queryKey: ['companies', search, segment, status, lifecycleFilter, cityFilter, industryFilter, iso500Filter, capitalTypeFilter, employeeRangeIdx, netSalesRangeIdx, page, limit, sortBy, sortDir],
+    queryFn: () => api.getCompanies({
+      search: search || undefined,
+      segment: segment || undefined,
+      status: status || undefined,
+      lifecycle_stage: lifecycleFilter || undefined,
+      city: cityFilter || undefined,
+      industry: industryFilter || undefined,
+      iso500: iso500Filter || undefined,
+      capital_type: capitalTypeFilter || undefined,
+      min_employees: empRange.min,
+      max_employees: empRange.max,
+      min_net_sales: salesRange.min,
+      max_net_sales: salesRange.max,
+      page, limit, sort: sortBy, order: sortDir,
+    }),
     placeholderData: (prev) => prev,
   })
 
@@ -201,6 +270,20 @@ export default function CompaniesPage() {
     mutationFn: (ids: string[]) => api.bulkDeleteCompanies(ids),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }); setSelectedIds(new Set()); setBulkDeleteOpen(false) },
   })
+
+  const bulkLifecycleMutation = useMutation({
+    mutationFn: ({ ids, stage }: { ids: string[]; stage: LifecycleStage }) => api.bulkUpdateLifecycle(ids, stage),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }); setSelectedIds(new Set()); setBulkLifecycleOpen(false) },
+  })
+
+  const activeFilterCount = [lifecycleFilter, cityFilter, industryFilter, capitalTypeFilter].filter(Boolean).length
+    + (iso500Filter ? 1 : 0) + (employeeRangeIdx > 0 ? 1 : 0) + (netSalesRangeIdx > 0 ? 1 : 0)
+
+  function clearAdvFilters() {
+    setLifecycleFilter(''); setCityFilter(''); setIndustryFilter('')
+    setIso500Filter(false); setCapitalTypeFilter(''); setEmployeeRangeIdx(0); setNetSalesRangeIdx(0)
+    setPage(1)
+  }
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
@@ -243,9 +326,14 @@ export default function CompaniesPage() {
         </div>
         <div className="flex items-center gap-2">
           {selectedIds.size > 0 && (
-            <button onClick={() => setBulkDeleteOpen(true)} className="flex items-center gap-2 bg-churn-red text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-red-600 transition-colors">
-              <Trash2 className="w-4 h-4" /> Delete Selected ({selectedIds.size})
-            </button>
+            <>
+              <button onClick={() => setBulkLifecycleOpen(true)} className="flex items-center gap-2 bg-violet-600 text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-violet-500 transition-colors">
+                Stage ({selectedIds.size})
+              </button>
+              <button onClick={() => setBulkDeleteOpen(true)} className="flex items-center gap-2 bg-churn-red text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-red-600 transition-colors">
+                <Trash2 className="w-4 h-4" /> Delete ({selectedIds.size})
+              </button>
+            </>
           )}
           <button onClick={openCreate} className="flex items-center gap-2 bg-mrr-green text-black text-sm font-medium px-3 py-1.5 rounded hover:bg-emerald-400 transition-colors">
             <Plus className="w-4 h-4" /> New Company
@@ -254,19 +342,78 @@ export default function CompaniesPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-          <input className="input w-full pl-9" placeholder="Search companies..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+      <div className="space-y-2">
+        <div className="flex gap-3 flex-wrap items-center">
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <input className="input w-full pl-9" placeholder="Search companies..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+          </div>
+          <select className="select" value={segment} onChange={(e) => { setSegment(e.target.value); setPage(1) }}>
+            <option value="">All segments</option>
+            {SEGMENTS.filter(Boolean).map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select className="select" value={lifecycleFilter} onChange={(e) => { setLifecycleFilter(e.target.value); setPage(1) }}>
+            <option value="">All stages</option>
+            {LIFECYCLE_STAGES.map((s) => <option key={s} value={s}>{LIFECYCLE_META[s].label}</option>)}
+          </select>
+          <select className="select" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
+            <option value="">All statuses</option>
+            {STATUSES.filter(Boolean).map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <button
+            onClick={() => setShowAdvFilters((v) => !v)}
+            className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border transition-colors ${showAdvFilters || activeFilterCount > 0 ? 'border-mrr-green text-mrr-green bg-emerald-950' : 'border-border text-text-muted hover:text-text-primary'}`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            Filters{activeFilterCount > 0 && <span className="bg-mrr-green text-black text-xs font-bold px-1.5 rounded-full">{activeFilterCount}</span>}
+          </button>
+          {activeFilterCount > 0 && (
+            <button onClick={clearAdvFilters} className="flex items-center gap-1 text-xs text-text-muted hover:text-churn-red transition-colors">
+              <X className="w-3 h-3" /> Clear filters
+            </button>
+          )}
         </div>
-        <select className="select" value={segment} onChange={(e) => { setSegment(e.target.value); setPage(1) }}>
-          <option value="">All segments</option>
-          {SEGMENTS.filter(Boolean).map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select className="select" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
-          <option value="">All statuses</option>
-          {STATUSES.filter(Boolean).map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+
+        {/* Advanced filter panel */}
+        {showAdvFilters && (
+          <div className="card p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <div>
+              <label className="label text-xs block mb-1">City / Province</label>
+              <input className="input w-full" placeholder="e.g. İstanbul" value={cityFilter} onChange={(e) => { setCityFilter(e.target.value); setPage(1) }} />
+            </div>
+            <div>
+              <label className="label text-xs block mb-1">Industry keyword</label>
+              <input className="input w-full" placeholder="e.g. Petrol" value={industryFilter} onChange={(e) => { setIndustryFilter(e.target.value); setPage(1) }} />
+            </div>
+            <div>
+              <label className="label text-xs block mb-1">Employee size</label>
+              <select className="select w-full" value={employeeRangeIdx} onChange={(e) => { setEmployeeRangeIdx(Number(e.target.value)); setPage(1) }}>
+                {EMPLOYEE_RANGES.map((r, i) => <option key={i} value={i}>{r.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label text-xs block mb-1">Net Sales (TL)</label>
+              <select className="select w-full" value={netSalesRangeIdx} onChange={(e) => { setNetSalesRangeIdx(Number(e.target.value)); setPage(1) }}>
+                {NET_SALES_RANGES.map((r, i) => <option key={i} value={i}>{r.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label text-xs block mb-1">Capital type</label>
+              <select className="select w-full" value={capitalTypeFilter} onChange={(e) => { setCapitalTypeFilter(e.target.value); setPage(1) }}>
+                <option value="">Any</option>
+                <option value="foreign">Has Foreign Capital</option>
+                <option value="public">Has Public Capital</option>
+                <option value="listed">Listed (Halka Açık)</option>
+              </select>
+            </div>
+            <div className="flex items-end pb-0.5">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" className="rounded" checked={iso500Filter} onChange={(e) => { setIso500Filter(e.target.checked); setPage(1) }} />
+                <span className="text-xs text-text-secondary">ISO 500 only</span>
+              </label>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -277,13 +424,14 @@ export default function CompaniesPage() {
               <th className="table-header w-10">
                 <input type="checkbox" className="rounded" checked={selectedIds.size === companies.length && companies.length > 0} onChange={toggleSelectAll} />
               </th>
-              <SortTh label="Company"    field="name"        sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-              <SortTh label="Segment"    field="segment"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-              <SortTh label="Country"    field="country"     sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-              <SortTh label="Industry"   field="industry"    sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-              <SortTh label="Churn Risk" field="churn_risk"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} className="text-right" />
-              <SortTh label="MRR"        field="mrr"         sortBy={sortBy} sortDir={sortDir} onSort={handleSort} className="text-right" />
-              <SortTh label="ARR"        field="arr"         sortBy={sortBy} sortDir={sortDir} onSort={handleSort} className="text-right" />
+              <SortTh label="Company"    field="name"            sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Stage"      field="lifecycle_stage" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Segment"    field="segment"         sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="City"       field="country"         sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Industry"   field="industry"        sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortTh label="Employees"  field="employee_count"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} className="text-right" />
+              <SortTh label="Churn Risk" field="churn_risk"      sortBy={sortBy} sortDir={sortDir} onSort={handleSort} className="text-right" />
+              <SortTh label="MRR"        field="mrr"             sortBy={sortBy} sortDir={sortDir} onSort={handleSort} className="text-right" />
               <th className="table-header w-20" />
             </tr>
           </thead>
@@ -291,7 +439,7 @@ export default function CompaniesPage() {
             {isLoading ? (
               Array.from({ length: 10 }).map((_, i) => (
                 <tr key={i} className="border-b border-border">
-                  <td colSpan={8} className="table-cell"><div className="h-4 bg-surface rounded animate-pulse w-full" /></td>
+                  <td colSpan={9} className="table-cell"><div className="h-4 bg-surface rounded animate-pulse w-full" /></td>
                 </tr>
               ))
             ) : companies.length === 0 ? (
@@ -315,17 +463,18 @@ export default function CompaniesPage() {
                         <CompanyStatusBadge status={company.status} />
                       </div>
                     </td>
+                    <td className="table-cell"><LifecycleBadge stage={company.lifecycle_stage} /></td>
                     <td className="table-cell"><SegmentBadge segment={company.segment} /></td>
-                    <td className="table-cell text-text-secondary text-sm">{company.country || '—'}</td>
-                    <td className="table-cell text-text-secondary text-sm">{company.industry || '—'}</td>
+                    <td className="table-cell text-text-secondary text-sm">{[company.city, company.country].filter(Boolean).join(', ') || '—'}</td>
+                    <td className="table-cell text-text-secondary text-sm max-w-[140px] truncate">{company.industry || '—'}</td>
+                    <td className="table-cell text-right text-text-secondary text-sm">
+                      {company.employee_count != null ? company.employee_count.toLocaleString() : '—'}
+                    </td>
                     <td className="table-cell text-right">
                       <ChurnRiskBadge score={churnScoreMap[company.id]} />
                     </td>
                     <td className="table-cell text-right">
                       {mrr > 0 ? <span className="font-semibold text-mrr-green">{formatCurrency(mrr, 'USD', true)}</span> : <span className="text-text-muted">—</span>}
-                    </td>
-                    <td className="table-cell text-right text-text-secondary text-sm">
-                      {mrr > 0 ? formatCurrency(mrr * 12, 'USD', true) : '—'}
                     </td>
                     <td className="table-cell">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -400,6 +549,17 @@ export default function CompaniesPage() {
                 <select className="select w-full" value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
                   {['active', 'churned', 'at-risk', 'prospect'].map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
+              </div>
+              <div>
+                <label className="label text-xs block mb-1">Lifecycle Stage</label>
+                <select className="select w-full" value={form.lifecycle_stage} onChange={(e) => setForm((f) => ({ ...f, lifecycle_stage: e.target.value }))}>
+                  <option value="">—</option>
+                  {LIFECYCLE_STAGES.map((s) => <option key={s} value={s}>{LIFECYCLE_META[s].label}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="label text-xs block mb-1">Strategic Notes</label>
+                <textarea className="input w-full resize-none" rows={2} value={form.strategic_notes} onChange={(e) => setForm((f) => ({ ...f, strategic_notes: e.target.value }))} />
               </div>
             </div>
           </div>
@@ -597,6 +757,41 @@ export default function CompaniesPage() {
         message={`Delete ${selectedIds.size} selected companies? This cannot be undone.`}
         loading={bulkDeleteMutation.isPending}
       />
+
+      {/* Bulk Lifecycle Stage Modal */}
+      <Modal open={bulkLifecycleOpen} onClose={() => setBulkLifecycleOpen(false)} title={`Change Stage — ${selectedIds.size} companies`}>
+        <div className="space-y-4">
+          <p className="text-sm text-text-secondary">Select a lifecycle stage to apply to all selected companies.</p>
+          <div className="grid grid-cols-2 gap-2">
+            {LIFECYCLE_STAGES.map((s) => {
+              const m = LIFECYCLE_META[s]
+              return (
+                <button
+                  key={s}
+                  onClick={() => setBulkLifecycleStage(s)}
+                  className={`px-3 py-2 rounded text-sm font-medium text-left transition-colors border ${
+                    bulkLifecycleStage === s
+                      ? `${m.bg} ${m.color} border-current`
+                      : 'border-border text-text-secondary hover:border-text-muted'
+                  }`}
+                >
+                  {m.label}
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex justify-end gap-3 pt-1">
+            <button onClick={() => setBulkLifecycleOpen(false)} className="btn-secondary text-sm px-4 py-2">Cancel</button>
+            <button
+              onClick={() => bulkLifecycleMutation.mutate({ ids: Array.from(selectedIds), stage: bulkLifecycleStage })}
+              disabled={bulkLifecycleMutation.isPending}
+              className="bg-violet-600 text-white text-sm font-medium px-4 py-2 rounded hover:bg-violet-500 transition-colors disabled:opacity-50"
+            >
+              {bulkLifecycleMutation.isPending ? 'Updating…' : 'Apply Stage'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

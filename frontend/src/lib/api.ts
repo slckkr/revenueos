@@ -135,11 +135,26 @@ export const api = {
     }>(`/metrics/churn-rates?months=${months}`),
 
   // Companies
-  getCompanies: (params?: { search?: string; segment?: string; status?: string; page?: number; sort?: string; order?: string; limit?: number }) => {
+  getCompanies: (params?: {
+    search?: string; segment?: string; status?: string; lifecycle_stage?: string
+    city?: string; industry?: string; iso500?: boolean; capital_type?: string
+    min_employees?: number; max_employees?: number
+    min_net_sales?: number; max_net_sales?: number
+    page?: number; sort?: string; order?: string; limit?: number
+  }) => {
     const qs = new URLSearchParams()
     if (params?.search) qs.set('search', params.search)
     if (params?.segment) qs.set('segment', params.segment)
     if (params?.status) qs.set('status', params.status)
+    if (params?.lifecycle_stage) qs.set('lifecycle_stage', params.lifecycle_stage)
+    if (params?.city) qs.set('city', params.city)
+    if (params?.industry) qs.set('industry', params.industry)
+    if (params?.iso500) qs.set('iso500', 'true')
+    if (params?.capital_type) qs.set('capital_type', params.capital_type)
+    if (params?.min_employees != null) qs.set('min_employees', String(params.min_employees))
+    if (params?.max_employees != null) qs.set('max_employees', String(params.max_employees))
+    if (params?.min_net_sales != null) qs.set('min_net_sales', String(params.min_net_sales))
+    if (params?.max_net_sales != null) qs.set('max_net_sales', String(params.max_net_sales))
     if (params?.page) qs.set('page', String(params.page))
     if (params?.sort) qs.set('sort', params.sort)
     if (params?.order) qs.set('order', params.order)
@@ -159,6 +174,8 @@ export const api = {
     fetchJSON<{ success: true; data: Company }>(`/companies/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteCompany: (id: string) =>
     fetchJSON<{ success: true }>(`/companies/${id}`, { method: 'DELETE' }),
+  bulkUpdateLifecycle: (ids: string[], lifecycle_stage: string) =>
+    fetchJSON<{ success: true; updated: number }>('/companies/bulk/lifecycle', { method: 'PATCH', body: JSON.stringify({ ids, lifecycle_stage }) }),
   bulkDeleteCompanies: (ids: string[]) =>
     fetchJSON<{ success: true; deleted: number }>('/companies/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
@@ -787,6 +804,9 @@ export interface Company {
   iso500_rank?: number | null
   iso500_rank_prev_year?: number | null
   data_year?: number | null
+  // Lifecycle & intelligence
+  lifecycle_stage?: 'target' | 'prospect' | 'qualified' | 'hot_lead' | 'proposal' | 'customer' | 'at_risk' | 'churned' | null
+  strategic_notes?: string | null
   // Computed
   current_mrr?: number
   current_mrr_month?: string | null

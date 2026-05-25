@@ -52,6 +52,9 @@ const profileFields = {
   iso500_rank: Joi.number().integer().positive().optional().allow(null),
   iso500_rank_prev_year: Joi.number().integer().positive().optional().allow(null),
   data_year: Joi.number().integer().min(2000).max(2100).optional().allow(null),
+  // lifecycle & intelligence
+  lifecycle_stage: Joi.string().valid('target', 'prospect', 'qualified', 'hot_lead', 'proposal', 'customer', 'at_risk', 'churned').optional().allow(null),
+  strategic_notes: Joi.string().optional().allow('', null),
 }
 
 const createSchema = Joi.object({
@@ -67,9 +70,16 @@ const updateSchema = Joi.object({
 // GET /companies
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.tenantId
-  const { search, segment, status, page = '1', limit = '50', sort = 'mrr', order = 'desc' } = req.query as Record<string, string>
+  const {
+    search, segment, status, lifecycle_stage,
+    city, iso500, industry,
+    min_employees, max_employees,
+    min_net_sales, max_net_sales,
+    capital_type,
+    page = '1', limit = '50', sort = 'mrr', order = 'desc',
+  } = req.query as Record<string, string>
   const ascending = order === 'asc'
-  const VALID_SORTS = ['name', 'segment', 'country', 'industry', 'mrr', 'arr', 'churn_risk']
+  const VALID_SORTS = ['name', 'segment', 'country', 'industry', 'mrr', 'arr', 'churn_risk', 'lifecycle_stage', 'net_sales', 'employee_count']
   const sortField = VALID_SORTS.includes(sort) ? sort : 'mrr'
 
   let query = supabase
@@ -80,6 +90,17 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
   if (search) query = query.ilike('name', `%${search}%`)
   if (segment) query = query.eq('segment', segment)
   if (status) query = query.eq('status', status)
+  if (lifecycle_stage) query = query.eq('lifecycle_stage', lifecycle_stage)
+  if (city) query = query.ilike('city', `%${city}%`)
+  if (industry) query = query.ilike('industry', `%${industry}%`)
+  if (iso500 === 'true') query = query.not('iso500_rank', 'is', null)
+  if (min_employees) query = query.gte('employee_count', parseInt(min_employees))
+  if (max_employees) query = query.lte('employee_count', parseInt(max_employees))
+  if (min_net_sales) query = query.gte('net_sales', parseFloat(min_net_sales))
+  if (max_net_sales) query = query.lte('net_sales', parseFloat(max_net_sales))
+  if (capital_type === 'foreign') query = query.gt('capital_share_foreign', 0)
+  if (capital_type === 'public') query = query.gt('capital_share_public', 0)
+  if (capital_type === 'listed') query = query.gt('capital_share_float', 0)
 
   const { data: allData, error, count } = await query.order('name')
   if (error) throw new AppError(error.message, 500, 'DB_ERROR')
@@ -128,12 +149,15 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
   companies.sort((a, b) => {
     let av: string | number, bv: string | number
     switch (sortField) {
-      case 'name':     av = (a.name || '').toLowerCase();     bv = (b.name || '').toLowerCase();     break
-      case 'segment':  av = a.segment || '';                  bv = b.segment || '';                  break
-      case 'country':  av = (a.country || '').toLowerCase();  bv = (b.country || '').toLowerCase();  break
-      case 'industry': av = (a.industry || '').toLowerCase(); bv = (b.industry || '').toLowerCase(); break
-      case 'churn_risk': av = churnMap[a.id] ?? -1;           bv = churnMap[b.id] ?? -1;             break
-      default:         av = a.current_mrr;                    bv = b.current_mrr
+      case 'name':           av = (a.name || '').toLowerCase();       bv = (b.name || '').toLowerCase();       break
+      case 'segment':        av = a.segment || '';                    bv = b.segment || '';                    break
+      case 'country':        av = (a.country || '').toLowerCase();    bv = (b.country || '').toLowerCase();    break
+      case 'industry':       av = (a.industry || '').toLowerCase();   bv = (b.industry || '').toLowerCase();   break
+      case 'lifecycle_stage':av = a.lifecycle_stage || '';            bv = b.lifecycle_stage || '';            break
+      case 'net_sales':      av = a.net_sales ?? 0;                   bv = b.net_sales ?? 0;                   break
+      case 'employee_count': av = a.employee_count ?? 0;              bv = b.employee_count ?? 0;              break
+      case 'churn_risk':     av = churnMap[a.id] ?? -1;               bv = churnMap[b.id] ?? -1;               break
+      default:               av = a.current_mrr;                      bv = b.current_mrr
     }
     if (av < bv) return ascending ? -1 : 1
     if (av > bv) return ascending ? 1 : -1
@@ -239,6 +263,18 @@ router.delete('/bulk', asyncHandler(async (req: Request, res: Response) => {
   const { error } = await supabase.from('companies').delete().in('id', ids).eq('tenant_id', tenantId)
   if (error) throw new AppError(error.message, 500, 'DB_ERROR')
   res.json({ success: true, deleted: ids.length })
+}))
+
+// PATCH /companies/bulk/lifecycle
+router.patch('/bulk/lifecycle', asyncHandler(async (req: Request, res: Response) => {
+  const tenantId = req.user!.tenantId
+  const { ids, lifecycle_stage } = req.body
+  if (!Array.isArray(ids) || ids.length === 0) throw new AppError('ids array required', 400, 'VALIDATION_ERROR')
+  const VALID = ['target', 'prospect', 'qualified', 'hot_lead', 'proposal', 'customer', 'at_risk', 'churned']
+  if (!VALID.includes(lifecycle_stage)) throw new AppError('Invalid lifecycle_stage', 400, 'VALIDATION_ERROR')
+  const { error } = await supabase.from('companies').update({ lifecycle_stage }).in('id', ids).eq('tenant_id', tenantId)
+  if (error) throw new AppError(error.message, 500, 'DB_ERROR')
+  res.json({ success: true, updated: ids.length })
 }))
 
 // DELETE /companies/:id

@@ -4,13 +4,75 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ExternalLink, Mail, Phone, MapPin, Building2, Users, CreditCard, Briefcase, FileText, FileSignature, Activity, StickyNote, CheckSquare, Plus, Trash2, CheckCircle2, Circle } from 'lucide-react'
-import { api } from '@/lib/api'
+import { ArrowLeft, ExternalLink, Mail, Phone, MapPin, Building2, Users, CreditCard, Briefcase, FileText, FileSignature, Activity, StickyNote, CheckSquare, Plus, Trash2, CheckCircle2, Circle, Pencil, X, Check } from 'lucide-react'
+import { api, Company } from '@/lib/api'
 import { formatCurrency, formatMonth } from '@/lib/formatters'
 import { EventBadge, SegmentBadge, Badge } from '@/components/ui/Badge'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from 'recharts'
+
+type LifecycleStage = 'target' | 'prospect' | 'qualified' | 'hot_lead' | 'proposal' | 'customer' | 'at_risk' | 'churned'
+const LIFECYCLE_STAGES: LifecycleStage[] = ['target', 'prospect', 'qualified', 'hot_lead', 'proposal', 'customer', 'at_risk', 'churned']
+const LIFECYCLE_META: Record<LifecycleStage, { label: string; color: string; bg: string }> = {
+  target:    { label: 'Target',    color: 'text-text-muted',  bg: 'bg-surface' },
+  prospect:  { label: 'Prospect',  color: 'text-blue-400',    bg: 'bg-blue-950' },
+  qualified: { label: 'Qualified', color: 'text-violet-400',  bg: 'bg-violet-950' },
+  hot_lead:  { label: 'Hot Lead',  color: 'text-orange-400',  bg: 'bg-orange-950' },
+  proposal:  { label: 'Proposal',  color: 'text-yellow-400',  bg: 'bg-yellow-950' },
+  customer:  { label: 'Customer',  color: 'text-mrr-green',   bg: 'bg-emerald-950' },
+  at_risk:   { label: 'At Risk',   color: 'text-amber-400',   bg: 'bg-amber-950' },
+  churned:   { label: 'Churned',   color: 'text-churn-red',   bg: 'bg-red-950' },
+}
+
+function LifecycleBadge({ stage }: { stage?: LifecycleStage | null }) {
+  if (!stage) return <span className="text-xs text-text-muted px-2 py-0.5 rounded bg-surface border border-border">No Stage</span>
+  const m = LIFECYCLE_META[stage]
+  return <span className={`text-xs font-semibold px-2.5 py-1 rounded ${m.color} ${m.bg}`}>{m.label}</span>
+}
+
+type SectionKey = 'basic' | 'location' | 'contact' | 'business' | 'financial' | 'capital' | 'rankings'
+
+function SectionHeader({ title, sectionKey, editing, onEdit, onCancel, onSave, saving }: {
+  title: string; sectionKey: SectionKey; editing: SectionKey | null
+  onEdit: () => void; onCancel: () => void; onSave: () => void; saving: boolean
+}) {
+  const isEditing = editing === sectionKey
+  return (
+    <div className="flex items-center justify-between mb-3">
+      <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">{title}</h3>
+      {isEditing ? (
+        <div className="flex items-center gap-2">
+          <button onClick={onCancel} className="flex items-center gap-1 text-xs text-text-muted hover:text-text-primary transition-colors"><X className="w-3 h-3" /> Cancel</button>
+          <button onClick={onSave} disabled={saving} className="flex items-center gap-1 text-xs bg-mrr-green text-black px-2 py-0.5 rounded font-medium hover:bg-emerald-400 transition-colors disabled:opacity-50">
+            {saving ? '…' : <><Check className="w-3 h-3" /> Save</>}
+          </button>
+        </div>
+      ) : (
+        editing === null && <button onClick={onEdit} className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+      )}
+    </div>
+  )
+}
+
+function Field({ label, value, link }: { label: string; value?: string | null; link?: string }) {
+  return (
+    <div>
+      <p className="text-xs text-text-muted mb-0.5">{label}</p>
+      {value
+        ? link
+          ? <a href={link} target="_blank" rel="noopener noreferrer" className="text-sm text-mrr-green hover:underline">{value}</a>
+          : <p className="text-sm font-medium text-text-primary">{value}</p>
+        : <p className="text-sm text-text-muted">—</p>}
+    </div>
+  )
+}
+
+function FinField({ label, value, colored }: { label: string; value?: number | null; colored?: boolean }) {
+  if (value == null) return <div><p className="text-xs text-text-muted mb-0.5">{label}</p><p className="text-sm text-text-muted">—</p></div>
+  const color = colored ? (value >= 0 ? 'text-mrr-green' : 'text-churn-red') : 'text-text-primary'
+  return <div><p className="text-xs text-text-muted mb-0.5">{label}</p><p className={`text-sm font-medium ${color}`}>{value.toLocaleString('tr-TR')} TL</p></div>
+}
 
 export default function CompanyDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -74,6 +136,24 @@ export default function CompanyDetailPage() {
   const [newNote, setNewNote] = useState('')
   const [newTask, setNewTask] = useState('')
   const [newTaskDue, setNewTaskDue] = useState('')
+
+  // Section-by-section edit
+  const [editingSection, setEditingSection] = useState<SectionKey | null>(null)
+  const [sectionDraft, setSectionDraft] = useState<Partial<Company>>({})
+  const [lifecycleDropdownOpen, setLifecycleDropdownOpen] = useState(false)
+
+  const updateMutation = useMutation({
+    mutationFn: (patch: Partial<Company>) => api.updateCompany(id, patch),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['company', id] }); setEditingSection(null); setSectionDraft({}) },
+  })
+
+  function startEdit(section: SectionKey, fields: Partial<Company>) {
+    setSectionDraft(fields)
+    setEditingSection(section)
+  }
+  function cancelEdit() { setEditingSection(null); setSectionDraft({}) }
+  function saveEdit() { updateMutation.mutate(sectionDraft) }
+  function patchDraft(patch: Partial<Company>) { setSectionDraft((d) => ({ ...d, ...patch })) }
 
   const createNoteMutation = useMutation({
     mutationFn: () => api.createNote({ object_type: 'company', object_id: id, body: newNote }),
@@ -161,50 +241,59 @@ export default function CompanyDetailPage() {
                 {company.status}
               </Badge>
             )}
+            {/* Lifecycle stage changer */}
+            <div className="relative">
+              <button
+                onClick={() => setLifecycleDropdownOpen((v) => !v)}
+                className="flex items-center gap-1"
+              >
+                <LifecycleBadge stage={company.lifecycle_stage as LifecycleStage | null} />
+              </button>
+              {lifecycleDropdownOpen && (
+                <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded shadow-lg z-20 py-1 min-w-[140px]">
+                  {LIFECYCLE_STAGES.map((s) => {
+                    const m = LIFECYCLE_META[s]
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => { api.updateCompany(id, { lifecycle_stage: s }); qc.invalidateQueries({ queryKey: ['company', id] }); setLifecycleDropdownOpen(false) }}
+                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-surface transition-colors ${m.color}`}
+                      >
+                        {m.label}
+                      </button>
+                    )
+                  })}
+                  <button
+                    onClick={() => { api.updateCompany(id, { lifecycle_stage: null }); qc.invalidateQueries({ queryKey: ['company', id] }); setLifecycleDropdownOpen(false) }}
+                    className="w-full text-left px-3 py-1.5 text-xs text-text-muted hover:bg-surface transition-colors border-t border-border mt-1"
+                  >
+                    Clear stage
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-3 mt-0.5 flex-wrap">
             {company.domain && (
-              <a
-                href={`https://${company.domain}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-text-secondary text-sm flex items-center gap-1 hover:text-mrr-green transition-colors"
-              >
+              <a href={`https://${company.domain}`} target="_blank" rel="noopener noreferrer"
+                className="text-text-secondary text-sm flex items-center gap-1 hover:text-mrr-green transition-colors">
                 {company.domain} <ExternalLink className="w-3 h-3" />
               </a>
             )}
             {(company.country || company.city) && (
               <span className="text-xs text-text-muted flex items-center gap-1">
-                <MapPin className="w-3 h-3" />
-                {[company.city, company.district, company.country].filter(Boolean).join(', ')}
+                <MapPin className="w-3 h-3" />{[company.city, company.district, company.country].filter(Boolean).join(', ')}
               </span>
             )}
-            {company.industry && (
-              <span className="text-xs text-text-muted flex items-center gap-1">
-                <Building2 className="w-3 h-3" />{company.industry}
-              </span>
-            )}
-            {company.phone1 && (
-              <span className="text-xs text-text-muted flex items-center gap-1">
-                <Phone className="w-3 h-3" />{company.phone1}
-              </span>
-            )}
-            {company.email && (
-              <a href={`mailto:${company.email}`} className="text-xs text-text-muted flex items-center gap-1 hover:text-mrr-green transition-colors">
-                <Mail className="w-3 h-3" />{company.email}
-              </a>
-            )}
-            {company.hubspot_id && (
-              <span className="text-xs text-text-muted bg-surface px-2 py-0.5 rounded border border-border">
-                HubSpot: {company.hubspot_id}
-              </span>
-            )}
-            {company.iso500_rank && (
-              <span className="text-xs text-text-muted bg-surface px-2 py-0.5 rounded border border-border">
-                ISO 500 #{company.iso500_rank}{company.data_year ? ` (${company.data_year})` : ''}
-              </span>
-            )}
+            {company.industry && <span className="text-xs text-text-muted flex items-center gap-1"><Building2 className="w-3 h-3" />{company.industry}</span>}
+            {company.phone1 && <span className="text-xs text-text-muted flex items-center gap-1"><Phone className="w-3 h-3" />{company.phone1}</span>}
+            {company.email && <a href={`mailto:${company.email}`} className="text-xs text-text-muted flex items-center gap-1 hover:text-mrr-green transition-colors"><Mail className="w-3 h-3" />{company.email}</a>}
+            {company.hubspot_id && <span className="text-xs text-text-muted bg-surface px-2 py-0.5 rounded border border-border">HubSpot: {company.hubspot_id}</span>}
+            {company.iso500_rank && <span className="text-xs text-text-muted bg-surface px-2 py-0.5 rounded border border-border">ISO 500 #{company.iso500_rank}{company.data_year ? ` (${company.data_year})` : ''}</span>}
           </div>
+          {company.strategic_notes && (
+            <p className="text-xs text-text-secondary mt-1.5 italic border-l-2 border-border pl-2">{company.strategic_notes}</p>
+          )}
         </div>
       </div>
 
@@ -268,66 +357,180 @@ export default function CompanyDetailPage() {
         </div>
       )}
 
-      {/* Company Profile — extended fields */}
-      {(company.net_sales != null || company.ebitda != null || company.total_assets != null ||
-        company.nace_code || company.address || company.capital_share_public != null) && (
+      {/* Company Profile — section-by-section editable cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* Basic Info */}
         <div className="card">
-          <h2 className="font-semibold text-text-primary mb-4">Company Profile</h2>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm">
-            {company.net_sales != null && (
-              <div><p className="text-xs text-text-muted mb-0.5">Net Sales</p><p className="font-medium text-text-primary">{company.net_sales.toLocaleString('tr-TR')} TL</p></div>
-            )}
-            {company.production_sales_net != null && (
-              <div><p className="text-xs text-text-muted mb-0.5">Production Sales (Net)</p><p className="font-medium text-text-primary">{company.production_sales_net.toLocaleString('tr-TR')} TL</p></div>
-            )}
-            {company.gross_value_added != null && (
-              <div><p className="text-xs text-text-muted mb-0.5">Gross Value Added</p><p className="font-medium text-text-primary">{company.gross_value_added.toLocaleString('tr-TR')} TL</p></div>
-            )}
-            {company.ebitda != null && (
-              <div><p className="text-xs text-text-muted mb-0.5">EBITDA (FAVÖK)</p><p className="font-medium text-text-primary">{company.ebitda.toLocaleString('tr-TR')} TL</p></div>
-            )}
-            {company.pre_tax_profit != null && (
-              <div><p className="text-xs text-text-muted mb-0.5">Pre-tax Profit/Loss</p><p className={`font-medium ${company.pre_tax_profit >= 0 ? 'text-mrr-green' : 'text-churn-red'}`}>{company.pre_tax_profit.toLocaleString('tr-TR')} TL</p></div>
-            )}
-            {company.equity != null && (
-              <div><p className="text-xs text-text-muted mb-0.5">Equity (Özkaynaklar)</p><p className="font-medium text-text-primary">{company.equity.toLocaleString('tr-TR')} TL</p></div>
-            )}
-            {company.total_assets != null && (
-              <div><p className="text-xs text-text-muted mb-0.5">Total Assets (Aktif)</p><p className="font-medium text-text-primary">{company.total_assets.toLocaleString('tr-TR')} TL</p></div>
-            )}
-            {company.exports_usd != null && (
-              <div><p className="text-xs text-text-muted mb-0.5">Exports</p><p className="font-medium text-text-primary">${company.exports_usd.toLocaleString('tr-TR')}K</p></div>
-            )}
-            {(company.capital_share_public != null || company.capital_share_private != null ||
-              company.capital_share_foreign != null || company.capital_share_float != null) && (
-              <div className="col-span-2 lg:col-span-4 border-t border-border pt-3 mt-1">
-                <p className="text-xs text-text-muted mb-1.5">Capital Structure</p>
-                <div className="flex flex-wrap gap-3">
-                  {company.capital_share_public != null && <span className="text-xs bg-surface px-2 py-0.5 rounded border border-border">Public {company.capital_share_public}%</span>}
-                  {company.capital_share_private != null && <span className="text-xs bg-surface px-2 py-0.5 rounded border border-border">Private {company.capital_share_private}%</span>}
-                  {company.capital_share_foreign != null && <span className="text-xs bg-surface px-2 py-0.5 rounded border border-border">Foreign {company.capital_share_foreign}%</span>}
-                  {company.capital_share_float != null && <span className="text-xs bg-surface px-2 py-0.5 rounded border border-border">Float {company.capital_share_float}%</span>}
-                </div>
+          <SectionHeader title="Basic Info" sectionKey="basic" editing={editingSection}
+            onEdit={() => startEdit('basic', { name: company.name, domain: company.domain, segment: company.segment, status: company.status, hubspot_id: company.hubspot_id, strategic_notes: company.strategic_notes })}
+            onCancel={cancelEdit} onSave={saveEdit} saving={updateMutation.isPending} />
+          {editingSection === 'basic' ? (
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="col-span-2"><label className="label text-xs block mb-1">Name</label><input className="input w-full" value={sectionDraft.name || ''} onChange={(e) => patchDraft({ name: e.target.value })} /></div>
+              <div><label className="label text-xs block mb-1">Domain</label><input className="input w-full" value={sectionDraft.domain || ''} onChange={(e) => patchDraft({ domain: e.target.value })} /></div>
+              <div><label className="label text-xs block mb-1">HubSpot ID</label><input className="input w-full" value={sectionDraft.hubspot_id || ''} onChange={(e) => patchDraft({ hubspot_id: e.target.value })} /></div>
+              <div><label className="label text-xs block mb-1">Segment</label>
+                <select className="select w-full" value={sectionDraft.segment || ''} onChange={(e) => patchDraft({ segment: e.target.value as Company['segment'] })}>
+                  <option value="">—</option>{['SMB', 'MID', 'ENT'].map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
               </div>
-            )}
-            {(company.nace_description || company.nace_code) && (
-              <div className="col-span-2"><p className="text-xs text-text-muted mb-0.5">NACE</p><p className="font-medium text-text-primary">{[company.nace_description, company.nace_code].filter(Boolean).join(' · ')}</p></div>
-            )}
-            {(company.isic_description || company.isic_code) && (
-              <div className="col-span-2"><p className="text-xs text-text-muted mb-0.5">ISIC</p><p className="font-medium text-text-primary">{[company.isic_description, company.isic_code].filter(Boolean).join(' · ')}</p></div>
-            )}
-            {company.chamber_of_commerce && (
-              <div className="col-span-2"><p className="text-xs text-text-muted mb-0.5">Chamber of Commerce</p><p className="font-medium text-text-primary">{company.chamber_of_commerce}</p></div>
-            )}
-            {company.address && (
-              <div className="col-span-2 lg:col-span-4"><p className="text-xs text-text-muted mb-0.5">Address</p><p className="font-medium text-text-primary">{[company.address, company.district, company.postal_code].filter(Boolean).join(', ')}</p></div>
-            )}
-            {company.phone2 && (
-              <div><p className="text-xs text-text-muted mb-0.5">Phone 2</p><p className="font-medium text-text-primary">{company.phone2}</p></div>
-            )}
-          </div>
+              <div><label className="label text-xs block mb-1">Status</label>
+                <select className="select w-full" value={sectionDraft.status || 'active'} onChange={(e) => patchDraft({ status: e.target.value as Company['status'] })}>
+                  {['active', 'churned', 'at-risk', 'prospect'].map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2"><label className="label text-xs block mb-1">Strategic Notes</label><textarea className="input w-full resize-none" rows={2} value={sectionDraft.strategic_notes || ''} onChange={(e) => patchDraft({ strategic_notes: e.target.value })} /></div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <Field label="Domain" value={company.domain} link={company.domain ? `https://${company.domain}` : undefined} />
+              <Field label="Segment" value={company.segment} />
+              <Field label="Status" value={company.status} />
+              <Field label="HubSpot ID" value={company.hubspot_id} />
+              {company.strategic_notes && <div className="col-span-2"><p className="text-xs text-text-muted mb-0.5">Strategic Notes</p><p className="text-sm text-text-secondary italic">{company.strategic_notes}</p></div>}
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Location */}
+        <div className="card">
+          <SectionHeader title="Location" sectionKey="location" editing={editingSection}
+            onEdit={() => startEdit('location', { country: company.country, city: company.city, district: company.district, address: company.address, postal_code: company.postal_code })}
+            onCancel={cancelEdit} onSave={saveEdit} saving={updateMutation.isPending} />
+          {editingSection === 'location' ? (
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><label className="label text-xs block mb-1">Country</label><input className="input w-full" value={sectionDraft.country || ''} onChange={(e) => patchDraft({ country: e.target.value })} /></div>
+              <div><label className="label text-xs block mb-1">City (İl)</label><input className="input w-full" value={sectionDraft.city || ''} onChange={(e) => patchDraft({ city: e.target.value })} /></div>
+              <div><label className="label text-xs block mb-1">District (İlçe)</label><input className="input w-full" value={sectionDraft.district || ''} onChange={(e) => patchDraft({ district: e.target.value })} /></div>
+              <div><label className="label text-xs block mb-1">Postal Code</label><input className="input w-full" value={sectionDraft.postal_code || ''} onChange={(e) => patchDraft({ postal_code: e.target.value })} /></div>
+              <div className="col-span-2"><label className="label text-xs block mb-1">Address</label><input className="input w-full" value={sectionDraft.address || ''} onChange={(e) => patchDraft({ address: e.target.value })} /></div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <Field label="Country" value={company.country} />
+              <Field label="City" value={company.city} />
+              <Field label="District" value={company.district} />
+              <Field label="Postal Code" value={company.postal_code} />
+              {company.address && <div className="col-span-2"><p className="text-xs text-text-muted mb-0.5">Address</p><p className="text-sm text-text-primary">{company.address}</p></div>}
+            </div>
+          )}
+        </div>
+
+        {/* Contact */}
+        <div className="card">
+          <SectionHeader title="Contact" sectionKey="contact" editing={editingSection}
+            onEdit={() => startEdit('contact', { phone1: company.phone1, phone2: company.phone2, email: company.email })}
+            onCancel={cancelEdit} onSave={saveEdit} saving={updateMutation.isPending} />
+          {editingSection === 'contact' ? (
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><label className="label text-xs block mb-1">Phone 1</label><input className="input w-full" value={sectionDraft.phone1 || ''} onChange={(e) => patchDraft({ phone1: e.target.value })} /></div>
+              <div><label className="label text-xs block mb-1">Phone 2</label><input className="input w-full" value={sectionDraft.phone2 || ''} onChange={(e) => patchDraft({ phone2: e.target.value })} /></div>
+              <div className="col-span-2"><label className="label text-xs block mb-1">Email</label><input type="email" className="input w-full" value={sectionDraft.email || ''} onChange={(e) => patchDraft({ email: e.target.value })} /></div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <Field label="Phone 1" value={company.phone1} />
+              <Field label="Phone 2" value={company.phone2} />
+              <Field label="Email" value={company.email} link={company.email ? `mailto:${company.email}` : undefined} />
+            </div>
+          )}
+        </div>
+
+        {/* Business */}
+        <div className="card">
+          <SectionHeader title="Business" sectionKey="business" editing={editingSection}
+            onEdit={() => startEdit('business', { industry: company.industry, employee_count: company.employee_count, annual_revenue: company.annual_revenue, chamber_of_commerce: company.chamber_of_commerce, nace_description: company.nace_description, nace_code: company.nace_code, isic_description: company.isic_description, isic_code: company.isic_code })}
+            onCancel={cancelEdit} onSave={saveEdit} saving={updateMutation.isPending} />
+          {editingSection === 'business' ? (
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><label className="label text-xs block mb-1">Industry</label><input className="input w-full" value={sectionDraft.industry || ''} onChange={(e) => patchDraft({ industry: e.target.value })} /></div>
+              <div><label className="label text-xs block mb-1">Employees</label><input type="number" className="input w-full" value={sectionDraft.employee_count ?? ''} onChange={(e) => patchDraft({ employee_count: e.target.value ? parseInt(e.target.value) : null })} /></div>
+              <div><label className="label text-xs block mb-1">Annual Revenue</label><input type="number" className="input w-full" value={sectionDraft.annual_revenue ?? ''} onChange={(e) => patchDraft({ annual_revenue: e.target.value ? parseFloat(e.target.value) : null })} /></div>
+              <div className="col-span-2"><label className="label text-xs block mb-1">Chamber of Commerce</label><input className="input w-full" value={sectionDraft.chamber_of_commerce || ''} onChange={(e) => patchDraft({ chamber_of_commerce: e.target.value })} /></div>
+              <div><label className="label text-xs block mb-1">NACE Description</label><input className="input w-full" value={sectionDraft.nace_description || ''} onChange={(e) => patchDraft({ nace_description: e.target.value })} /></div>
+              <div><label className="label text-xs block mb-1">NACE Code</label><input className="input w-full" value={sectionDraft.nace_code || ''} onChange={(e) => patchDraft({ nace_code: e.target.value })} /></div>
+              <div><label className="label text-xs block mb-1">ISIC Description</label><input className="input w-full" value={sectionDraft.isic_description || ''} onChange={(e) => patchDraft({ isic_description: e.target.value })} /></div>
+              <div><label className="label text-xs block mb-1">ISIC Code</label><input className="input w-full" value={sectionDraft.isic_code || ''} onChange={(e) => patchDraft({ isic_code: e.target.value })} /></div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <Field label="Industry" value={company.industry} />
+              <Field label="Employees" value={company.employee_count != null ? company.employee_count.toLocaleString() : null} />
+              <Field label="Annual Revenue" value={company.annual_revenue != null ? `${company.annual_revenue.toLocaleString('tr-TR')} TL` : null} />
+              <Field label="Chamber" value={company.chamber_of_commerce} />
+              <Field label="NACE" value={[company.nace_description, company.nace_code].filter(Boolean).join(' · ') || null} />
+              <Field label="ISIC" value={[company.isic_description, company.isic_code].filter(Boolean).join(' · ') || null} />
+            </div>
+          )}
+        </div>
+
+        {/* Financial Metrics */}
+        <div className="card lg:col-span-2">
+          <SectionHeader title="Financial Metrics (TL)" sectionKey="financial" editing={editingSection}
+            onEdit={() => startEdit('financial', { net_sales: company.net_sales, production_sales_net: company.production_sales_net, gross_value_added: company.gross_value_added, equity: company.equity, total_assets: company.total_assets, pre_tax_profit: company.pre_tax_profit, ebitda: company.ebitda, exports_usd: company.exports_usd })}
+            onCancel={cancelEdit} onSave={saveEdit} saving={updateMutation.isPending} />
+          {editingSection === 'financial' ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              {([['net_sales','Net Sales'],['production_sales_net','Production Sales Net'],['gross_value_added','Gross Value Added'],['equity','Equity'],['total_assets','Total Assets'],['pre_tax_profit','Pre-tax Profit'],['ebitda','EBITDA'],['exports_usd','Exports (K$)']] as [keyof Company, string][]).map(([k, lbl]) => (
+                <div key={k}><label className="label text-xs block mb-1">{lbl}</label><input type="number" className="input w-full" value={(sectionDraft as Record<string, unknown>)[k] as number ?? ''} onChange={(e) => patchDraft({ [k]: e.target.value ? parseFloat(e.target.value) : null })} /></div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-sm">
+              <FinField label="Net Sales" value={company.net_sales} />
+              <FinField label="Production Sales" value={company.production_sales_net} />
+              <FinField label="Gross Value Added" value={company.gross_value_added} />
+              <FinField label="EBITDA" value={company.ebitda} />
+              <FinField label="Pre-tax Profit" value={company.pre_tax_profit} colored />
+              <FinField label="Equity" value={company.equity} />
+              <FinField label="Total Assets" value={company.total_assets} />
+              {company.exports_usd != null && <div><p className="text-xs text-text-muted mb-0.5">Exports</p><p className="font-medium text-text-primary">${company.exports_usd.toLocaleString('tr-TR')}K</p></div>}
+            </div>
+          )}
+        </div>
+
+        {/* Capital Structure + Rankings */}
+        <div className="card">
+          <SectionHeader title="Capital Structure (%)" sectionKey="capital" editing={editingSection}
+            onEdit={() => startEdit('capital', { capital_share_public: company.capital_share_public, capital_share_private: company.capital_share_private, capital_share_foreign: company.capital_share_foreign, capital_share_float: company.capital_share_float })}
+            onCancel={cancelEdit} onSave={saveEdit} saving={updateMutation.isPending} />
+          {editingSection === 'capital' ? (
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {([['capital_share_public','Public (Kamu)'],['capital_share_private','Private (Özel)'],['capital_share_foreign','Foreign (Yabancı)'],['capital_share_float','Float (Halka Açık)']] as [keyof Company, string][]).map(([k, lbl]) => (
+                <div key={k}><label className="label text-xs block mb-1">{lbl}</label><input type="number" min="0" max="100" step="0.01" className="input w-full" value={(sectionDraft as Record<string, unknown>)[k] as number ?? ''} onChange={(e) => patchDraft({ [k]: e.target.value ? parseFloat(e.target.value) : null })} /></div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {company.capital_share_public != null && <span className="text-xs bg-surface px-2 py-1 rounded border border-border">Public {company.capital_share_public}%</span>}
+              {company.capital_share_private != null && <span className="text-xs bg-surface px-2 py-1 rounded border border-border">Private {company.capital_share_private}%</span>}
+              {company.capital_share_foreign != null && <span className="text-xs bg-surface px-2 py-1 rounded border border-border">Foreign {company.capital_share_foreign}%</span>}
+              {company.capital_share_float != null && <span className="text-xs bg-surface px-2 py-1 rounded border border-border">Float {company.capital_share_float}%</span>}
+              {company.capital_share_public == null && company.capital_share_private == null && company.capital_share_foreign == null && company.capital_share_float == null && <p className="text-text-muted text-xs">No data</p>}
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <SectionHeader title="Rankings" sectionKey="rankings" editing={editingSection}
+            onEdit={() => startEdit('rankings', { iso500_rank: company.iso500_rank, iso500_rank_prev_year: company.iso500_rank_prev_year, data_year: company.data_year })}
+            onCancel={cancelEdit} onSave={saveEdit} saving={updateMutation.isPending} />
+          {editingSection === 'rankings' ? (
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              <div><label className="label text-xs block mb-1">ISO 500 Rank</label><input type="number" min="1" className="input w-full" value={sectionDraft.iso500_rank ?? ''} onChange={(e) => patchDraft({ iso500_rank: e.target.value ? parseInt(e.target.value) : null })} /></div>
+              <div><label className="label text-xs block mb-1">Prev Year Rank</label><input type="number" min="1" className="input w-full" value={sectionDraft.iso500_rank_prev_year ?? ''} onChange={(e) => patchDraft({ iso500_rank_prev_year: e.target.value ? parseInt(e.target.value) : null })} /></div>
+              <div><label className="label text-xs block mb-1">Data Year</label><input type="number" min="2000" max="2100" className="input w-full" value={sectionDraft.data_year ?? ''} onChange={(e) => patchDraft({ data_year: e.target.value ? parseInt(e.target.value) : null })} /></div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
+              <Field label="ISO 500 Rank" value={company.iso500_rank != null ? `#${company.iso500_rank}` : null} />
+              <Field label="Prev Year" value={company.iso500_rank_prev_year != null ? `#${company.iso500_rank_prev_year}` : null} />
+              <Field label="Data Year" value={company.data_year != null ? String(company.data_year) : null} />
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Revenue Events */}

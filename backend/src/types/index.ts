@@ -94,6 +94,9 @@ export interface Company {
   iso500_rank?: number | null
   iso500_rank_prev_year?: number | null
   data_year?: number | null
+  // Lifecycle & intelligence
+  lifecycle_stage?: 'target' | 'prospect' | 'qualified' | 'hot_lead' | 'proposal' | 'customer' | 'at_risk' | 'churned' | null
+  strategic_notes?: string | null
 }
 
 export interface Contact {
