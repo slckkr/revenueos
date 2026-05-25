@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx'
 import { supabase } from '../config/supabase'
 import type { ImportMapping } from './import-excel.service'
+import { COMPANY_FIELD_ALIASES, resolveCompanyMapping } from './import-company.service'
 
 const TARGET_FIELDS: Array<{
   field: keyof ImportMapping
@@ -171,7 +172,7 @@ export interface ColumnInfo {
 }
 
 export interface FieldSuggestion {
-  field: keyof ImportMapping
+  field: string
   label: string
   required: boolean
   suggested_column: string | null
@@ -181,6 +182,7 @@ export interface FieldSuggestion {
 export interface AnalyzeResult {
   columns: ColumnInfo[]
   suggestions: FieldSuggestion[]
+  entity: 'invoices' | 'companies'
 }
 
 export interface MappingTemplate {
@@ -193,14 +195,37 @@ export interface MappingTemplate {
   updated_at: string
 }
 
+// Company field metadata for AI analysis
+const COMPANY_TARGET_FIELDS: Array<{ field: string; label: string; required: boolean; aliases: string[] }> = Object.entries(COMPANY_FIELD_ALIASES).map(([field, aliases]) => {
+  const LABELS: Record<string, string> = {
+    name_col: 'Company Name', domain_col: 'Website / Domain', email_col: 'Email',
+    phone1_col: 'Phone 1', phone2_col: 'Phone 2', country_col: 'Country', city_col: 'City (İl)',
+    district_col: 'District (İlçe)', address_col: 'Address', postal_code_col: 'Postal Code',
+    segment_col: 'Segment (SMB/MID/ENT)', status_col: 'Status', lifecycle_stage_col: 'Lifecycle Stage',
+    industry_col: 'Industry / Sector', employee_count_col: 'Employee Count', annual_revenue_col: 'Annual Revenue',
+    external_id_col: 'External ID / ERP Code', hubspot_id_col: 'HubSpot ID',
+    chamber_of_commerce_col: 'Chamber of Commerce', nace_description_col: 'NACE Description',
+    nace_code_col: 'NACE Code', isic_description_col: 'ISIC Description', isic_code_col: 'ISIC Code',
+    net_sales_col: 'Net Sales (TL)', production_sales_net_col: 'Production Sales Net (TL)',
+    gross_value_added_col: 'Gross Value Added (TL)', equity_col: 'Equity / Özkaynaklar (TL)',
+    total_assets_col: 'Total Assets / Aktif (TL)', pre_tax_profit_col: 'Pre-tax Profit (TL)',
+    ebitda_col: 'EBITDA / FAVÖK (TL)', exports_usd_col: 'Exports (Thousand $)',
+    capital_share_public_col: 'Capital Public %', capital_share_private_col: 'Capital Private %',
+    capital_share_foreign_col: 'Capital Foreign %', capital_share_float_col: 'Capital Float %',
+    iso500_rank_col: 'ISO 500 Rank', iso500_rank_prev_year_col: 'ISO 500 Prev Year Rank',
+    data_year_col: 'Data Year', strategic_notes_col: 'Strategic Notes',
+  }
+  return { field, label: LABELS[field] ?? field, required: field === 'name_col', aliases }
+})
+
 class MappingService {
-  analyzeBuffer(buffer: Buffer, _filename: string): AnalyzeResult {
+  analyzeBuffer(buffer: Buffer, _filename: string, entity: 'invoices' | 'companies' = 'invoices'): AnalyzeResult {
     const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true })
     const sheetName = workbook.SheetNames[0]
     const sheet = workbook.Sheets[sheetName]
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
 
-    if (rows.length === 0) return { columns: [], suggestions: [] }
+    if (rows.length === 0) return { columns: [], suggestions: [], entity }
 
     const headers = Object.keys(rows[0])
     const sampleRows = rows.slice(0, 5)
@@ -210,53 +235,35 @@ class MappingService {
       const textSamples = rawSamples
         .filter((v) => v !== null && v !== undefined && v !== '')
         .slice(0, 3)
-        .map((v) =>
-          v instanceof Date ? v.toISOString().split('T')[0] : String(v).trim()
-        )
-      return {
-        name: h,
-        sample_values: textSamples,
-        detected_type: detectType(rawSamples),
-      }
+        .map((v) => v instanceof Date ? v.toISOString().split('T')[0] : String(v).trim())
+      return { name: h, sample_values: textSamples, detected_type: detectType(rawSamples) }
     })
 
-    const suggestions: FieldSuggestion[] = TARGET_FIELDS.map((tf) => {
+    const targetFields = entity === 'companies' ? COMPANY_TARGET_FIELDS : TARGET_FIELDS
+
+    const suggestions: FieldSuggestion[] = targetFields.map((tf) => {
       let bestCol: string | null = null
       let bestScore = 0
 
       for (const col of headers) {
         const score = scoreColumn(col, tf.aliases)
-        if (score > bestScore) {
-          bestScore = score
-          bestCol = col
-        }
+        if (score > bestScore) { bestScore = score; bestCol = col }
       }
 
-      // Boost if data type matches
       if (bestCol && bestScore > 0) {
         const info = columns.find((c) => c.name === bestCol)
         if (info) {
-          const isDateField =
-            tf.field === 'issue_date_col' ||
-            tf.field === 'service_start_col' ||
-            tf.field === 'service_end_col'
-          if (isDateField && info.detected_type === 'date')
-            bestScore = Math.min(100, bestScore + 5)
-          if (tf.field === 'amount_col' && info.detected_type === 'number')
+          const isDateField = tf.field === 'issue_date_col' || tf.field === 'service_start_col' || tf.field === 'service_end_col'
+          if (isDateField && info.detected_type === 'date') bestScore = Math.min(100, bestScore + 5)
+          if ((tf.field === 'amount_col' || tf.field.includes('sales') || tf.field.includes('equity') || tf.field.includes('assets') || tf.field.includes('ebitda') || tf.field.includes('profit') || tf.field.includes('exports') || tf.field.includes('capital') || tf.field.includes('count') || tf.field.includes('revenue') || tf.field.includes('rank') || tf.field.includes('year')) && info.detected_type === 'number')
             bestScore = Math.min(100, bestScore + 5)
         }
       }
 
-      return {
-        field: tf.field,
-        label: tf.label,
-        required: tf.required,
-        suggested_column: bestScore >= 30 ? bestCol : null,
-        confidence: bestScore,
-      }
+      return { field: tf.field, label: tf.label, required: tf.required, suggested_column: bestScore >= 30 ? bestCol : null, confidence: bestScore }
     })
 
-    return { columns, suggestions }
+    return { columns, suggestions, entity }
   }
 
   async getTemplates(tenantId: string): Promise<MappingTemplate[]> {

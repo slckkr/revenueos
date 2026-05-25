@@ -19,7 +19,8 @@ router.post(
     if (!req.file) throw new AppError('No file uploaded', 400, 'NO_FILE')
 
     try {
-      const result = mappingService.analyzeBuffer(req.file.buffer, req.file.originalname)
+      const entity = (req.body.entity as 'invoices' | 'companies') || 'invoices'
+      const result = mappingService.analyzeBuffer(req.file.buffer, req.file.originalname, entity)
       res.json({ success: true, data: result })
     } catch (err: any) {
       logger.error('Mapping analyze error', err)

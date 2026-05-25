@@ -237,6 +237,28 @@ export const api = {
       `/import/files/${id}`,
       { method: 'DELETE' }
     ),
+  importCompanies: (file: File, conflictMode: 'skip' | 'overwrite' = 'skip', mapping?: Record<string, string>) =>
+    uploadFile('/import/companies', file, { conflict_mode: conflictMode, ...(mapping ? { mapping: JSON.stringify(mapping) } : {}) }),
+  previewCompanyImport: (file: File, mapping?: Record<string, string>) =>
+    uploadFile('/import/companies/preview', file, { ...(mapping ? { mapping: JSON.stringify(mapping) } : {}) }),
+  analyzeFile: (file: File, entity: 'invoices' | 'companies' = 'invoices') =>
+    uploadFile('/mapping/analyze', file, { entity }),
+  downloadSample: (entity: 'invoices' | 'companies') => {
+    const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api'
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    return fetch(`${BASE_URL}/import/sample/${entity}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }).then(async (r) => {
+      if (!r.ok) throw new Error('Download failed')
+      const blob = await r.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `sample_${entity}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    })
+  },
 
   // Products
   getProducts: (params?: { page?: number; limit?: number; sort?: string; order?: string; search?: string }) => {
@@ -889,6 +911,20 @@ export interface ImportFile {
   created_at: string
 }
 
+export interface CompanyImportResult {
+  file_id: string
+  created: number
+  updated: number
+  skipped: number
+  errors: Array<{ row: number; message: string }>
+}
+
+export interface CompanyImportPreview {
+  total_rows: number
+  will_create: number
+  will_update: number
+}
+
 export interface ConflictPreview {
   total_rows: number
   new_rows: number
@@ -1398,6 +1434,7 @@ export interface FieldSuggestion {
 export interface AnalyzeResult {
   columns: ColumnInfo[]
   suggestions: FieldSuggestion[]
+  entity?: 'invoices' | 'companies'
 }
 
 export interface MappingTemplate {

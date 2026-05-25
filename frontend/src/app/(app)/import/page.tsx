@@ -2,11 +2,16 @@
 
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Upload, FileSpreadsheet, FileText, FileCode, CheckCircle, XCircle, Loader2, Download, RefreshCw, Trash2, AlertTriangle } from 'lucide-react'
-import { api, type ConflictPreview, type ImportResult } from '@/lib/api'
+import {
+  Upload, FileSpreadsheet, FileText, FileCode, FileJson,
+  CheckCircle, XCircle, Loader2, Download, RefreshCw, Trash2, AlertTriangle,
+  Building2, Receipt,
+} from 'lucide-react'
+import { api, type ConflictPreview, type ImportResult, type CompanyImportResult } from '@/lib/api'
 import { formatCurrency, formatRelativeTime } from '@/lib/formatters'
 import { Badge } from '@/components/ui/Badge'
 import { MappingWizard } from './MappingWizard'
+import { CompanyMappingWizard } from './CompanyMappingWizard'
 import clsx from 'clsx'
 
 function defaultRebuildRange() {
@@ -16,28 +21,36 @@ function defaultRebuildRange() {
   return { from, to }
 }
 
-type ImportType = 'excel' | 'csv' | 'xml'
+type Entity = 'invoices' | 'companies'
+type ImportType = 'excel' | 'csv' | 'xml' | 'json'
 
-const importTypes: { type: ImportType; label: string; accept: string; icon: React.ComponentType<any>; description: string }[] = [
+const INVOICE_TYPES: { type: ImportType; label: string; accept: string; icon: React.ComponentType<any>; description: string }[] = [
   { type: 'excel', label: 'Excel', accept: '.xlsx,.xls', icon: FileSpreadsheet, description: 'Invoice data in Excel format (.xlsx, .xls)' },
   { type: 'csv', label: 'CSV', accept: '.csv', icon: FileText, description: 'Invoice data in CSV format' },
   { type: 'xml', label: 'Logo XML', accept: '.xml', icon: FileCode, description: 'Logo e-Fatura / e-Arşiv XML export' },
 ]
 
+const COMPANY_TYPES: { type: ImportType; label: string; accept: string; icon: React.ComponentType<any>; description: string }[] = [
+  { type: 'excel', label: 'Excel', accept: '.xlsx,.xls', icon: FileSpreadsheet, description: 'Company list in Excel format (.xlsx, .xls)' },
+  { type: 'csv', label: 'CSV', accept: '.csv', icon: FileText, description: 'Company list in CSV format' },
+  { type: 'json', label: 'JSON', accept: '.json', icon: FileJson, description: 'Company list in JSON format' },
+]
+
 export default function ImportPage() {
+  const [entity, setEntity] = useState<Entity>('invoices')
   const [selectedType, setSelectedType] = useState<ImportType>('excel')
   const [dragging, setDragging] = useState(false)
   const [downloading, setDownloading] = useState<string | null>(null)
   const [rebuildResult, setRebuildResult] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
-  // Mapping wizard state
   const [wizardFile, setWizardFile] = useState<File | null>(null)
+  const [companyWizardFile, setCompanyWizardFile] = useState<File | null>(null)
 
-  // Conflict flow state (used only for XML)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [conflictData, setConflictData] = useState<ConflictPreview | null>(null)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [companyResult, setCompanyResult] = useState<CompanyImportResult | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [isImporting, setIsImporting] = useState(false)
   const [isPreviewing, setIsPreviewing] = useState(false)
@@ -83,15 +96,25 @@ export default function ImportPage() {
     try { await fn() } catch (e) { console.error(e) } finally { setDownloading(null) }
   }
 
-  const handleFile = async (file: File) => {
+  function resetState() {
     setImportResult(null)
+    setCompanyResult(null)
     setImportError(null)
     setConflictData(null)
     setPendingFile(null)
     setWizardFile(null)
+    setCompanyWizardFile(null)
+  }
+
+  const handleFile = async (file: File) => {
+    resetState()
+
+    if (entity === 'companies') {
+      setCompanyWizardFile(file)
+      return
+    }
 
     if (selectedType === 'xml') {
-      // XML has no conflict detection — import directly
       setIsImporting(true)
       try {
         const res = await api.importXml(file) as any
@@ -105,7 +128,6 @@ export default function ImportPage() {
       return
     }
 
-    // Excel/CSV: open AI mapping wizard
     setWizardFile(file)
   }
 
@@ -125,6 +147,12 @@ export default function ImportPage() {
     }
   }
 
+  function switchEntity(e: Entity) {
+    resetState()
+    setEntity(e)
+    setSelectedType('excel')
+  }
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragging(false)
@@ -132,32 +160,72 @@ export default function ImportPage() {
     if (file) handleFile(file)
   }
 
-  const currentType = importTypes.find((t) => t.type === selectedType)!
-  const busy = isPreviewing || isImporting || !!wizardFile
+  const importTypes = entity === 'companies' ? COMPANY_TYPES : INVOICE_TYPES
+  const currentType = importTypes.find((t) => t.type === selectedType) ?? importTypes[0]
+  const busy = isPreviewing || isImporting || !!wizardFile || !!companyWizardFile
 
   return (
     <div className="p-6 space-y-6">
+      {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-xl font-bold text-text-primary">Import Center</h1>
-          <p className="text-text-secondary text-sm mt-0.5">Import invoices from Excel, CSV, or Logo XML</p>
+          <p className="text-text-secondary text-sm mt-0.5">Import invoices, companies, and other data</p>
         </div>
+        <div className="flex gap-2">
+          <button
+            className="btn-secondary flex items-center gap-2 text-sm"
+            onClick={() => handleDownload('sample-invoices', () => api.downloadSample('invoices'))}
+            disabled={!!downloading}
+          >
+            {downloading === 'sample-invoices' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Invoice Template
+          </button>
+          <button
+            className="btn-secondary flex items-center gap-2 text-sm"
+            onClick={() => handleDownload('sample-companies', () => api.downloadSample('companies'))}
+            disabled={!!downloading}
+          >
+            {downloading === 'sample-companies' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Company Template
+          </button>
+        </div>
+      </div>
+
+      {/* Entity tabs */}
+      <div className="flex gap-2 border-b border-border pb-0">
         <button
-          className="btn-secondary flex items-center gap-2 text-sm"
-          onClick={() => handleDownload('template', () => api.downloadTemplate())}
-          disabled={downloading === 'template'}
+          onClick={() => switchEntity('invoices')}
+          className={clsx(
+            'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+            entity === 'invoices'
+              ? 'border-mrr-green text-mrr-green'
+              : 'border-transparent text-text-secondary hover:text-text-primary'
+          )}
         >
-          {downloading === 'template' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-          Download Template
+          <Receipt className="w-4 h-4" />
+          Invoices
+        </button>
+        <button
+          onClick={() => switchEntity('companies')}
+          className={clsx(
+            'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+            entity === 'companies'
+              ? 'border-mrr-green text-mrr-green'
+              : 'border-transparent text-text-secondary hover:text-text-primary'
+          )}
+        >
+          <Building2 className="w-4 h-4" />
+          Companies
         </button>
       </div>
 
-      {/* Type selector */}
+      {/* Format selector */}
       <div className="flex gap-3">
         {importTypes.map(({ type, label, icon: Icon }) => (
           <button
             key={type}
-            onClick={() => { setSelectedType(type); setImportResult(null); setConflictData(null); setImportError(null) }}
+            onClick={() => { setSelectedType(type); resetState() }}
             className={clsx(
               'flex items-center gap-2 px-4 py-2 rounded border text-sm font-medium transition-colors',
               selectedType === type
@@ -204,7 +272,9 @@ export default function ImportPage() {
           <div className="flex flex-col items-center gap-3">
             <Upload className="w-10 h-10 text-text-muted" />
             <div>
-              <p className="text-text-primary font-medium">Drop your {currentType.label} file here</p>
+              <p className="text-text-primary font-medium">
+                Drop your {currentType.label} file here
+              </p>
               <p className="text-text-secondary text-sm mt-1">{currentType.description}</p>
             </div>
             <span className="btn-secondary text-xs">Browse files</span>
@@ -212,7 +282,7 @@ export default function ImportPage() {
         )}
       </div>
 
-      {/* AI Mapping Wizard */}
+      {/* Invoice mapping wizard */}
       {wizardFile && (
         <MappingWizard
           file={wizardFile}
@@ -226,7 +296,20 @@ export default function ImportPage() {
         />
       )}
 
-      {/* Conflict dialog (XML only path — kept for legacy) */}
+      {/* Company mapping wizard */}
+      {companyWizardFile && (
+        <CompanyMappingWizard
+          file={companyWizardFile}
+          onDone={(result) => {
+            setCompanyResult(result)
+            setCompanyWizardFile(null)
+            qc.invalidateQueries({ queryKey: ['import-files'] })
+          }}
+          onCancel={() => setCompanyWizardFile(null)}
+        />
+      )}
+
+      {/* Conflict dialog (XML-only legacy path) */}
       {conflictData && pendingFile && (
         <div className="bg-warning bg-opacity-10 border border-warning border-opacity-40 rounded-lg p-5 space-y-4">
           <div className="flex items-start gap-3">
@@ -237,12 +320,9 @@ export default function ImportPage() {
               </p>
               <p className="text-sm text-text-secondary mt-0.5">
                 {conflictData.new_rows} new invoice{conflictData.new_rows !== 1 ? 's' : ''} will be added regardless.
-                Choose what to do with the duplicates:
               </p>
             </div>
           </div>
-
-          {/* Conflict table (up to 8 rows) */}
           <div className="overflow-x-auto rounded border border-border">
             <table className="w-full text-xs">
               <thead className="border-b border-border bg-surface">
@@ -269,38 +349,24 @@ export default function ImportPage() {
               </tbody>
             </table>
             {conflictData.conflicts.length > 8 && (
-              <p className="text-xs text-text-muted px-3 py-2">…and {conflictData.conflicts.length - 8} more duplicates</p>
+              <p className="text-xs text-text-muted px-3 py-2">…and {conflictData.conflicts.length - 8} more</p>
             )}
           </div>
-
           <div className="flex gap-3">
-            <button
-              className="btn-secondary text-sm"
-              onClick={() => runImport(pendingFile, 'skip')}
-              disabled={isImporting}
-            >
-              {isImporting ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : null}
-              Skip duplicates — keep existing
+            <button className="btn-secondary text-sm" onClick={() => runImport(pendingFile, 'skip')} disabled={isImporting}>
+              Skip duplicates
             </button>
-            <button
-              className="btn-primary text-sm"
-              onClick={() => runImport(pendingFile, 'overwrite')}
-              disabled={isImporting}
-            >
-              {isImporting ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : null}
+            <button className="btn-primary text-sm" onClick={() => runImport(pendingFile, 'overwrite')} disabled={isImporting}>
               Overwrite with new data
             </button>
-            <button
-              className="text-sm text-text-secondary hover:text-text-primary ml-auto"
-              onClick={() => { setConflictData(null); setPendingFile(null) }}
-            >
+            <button className="text-sm text-text-secondary hover:text-text-primary ml-auto" onClick={() => { setConflictData(null); setPendingFile(null) }}>
               Cancel
             </button>
           </div>
         </div>
       )}
 
-      {/* Import result */}
+      {/* Invoice import result */}
       {importResult && !isImporting && (() => {
         const errCount = importResult.errors?.length ?? 0
         const imported = importResult.records_imported ?? 0
@@ -317,10 +383,7 @@ export default function ImportPage() {
                 : 'bg-mrr-green bg-opacity-10 border border-mrr-green border-opacity-30'
           )}>
             <div className="flex items-center gap-2">
-              {allFailed
-                ? <XCircle className="w-5 h-5 text-churn-red flex-shrink-0" />
-                : <CheckCircle className="w-5 h-5 text-mrr-green flex-shrink-0" />
-              }
+              {allFailed ? <XCircle className="w-5 h-5 text-churn-red flex-shrink-0" /> : <CheckCircle className="w-5 h-5 text-mrr-green flex-shrink-0" />}
               <p className="font-medium text-text-primary">
                 {imported > 0 && `${imported} imported`}
                 {overwritten > 0 && `${imported > 0 ? ', ' : ''}${overwritten} overwritten`}
@@ -345,6 +408,40 @@ export default function ImportPage() {
         )
       })()}
 
+      {/* Company import result */}
+      {companyResult && !isImporting && (() => {
+        const errCount = companyResult.errors?.length ?? 0
+        const allFailed = companyResult.created === 0 && companyResult.updated === 0 && errCount > 0
+        return (
+          <div className={clsx(
+            'rounded-lg p-4 space-y-2',
+            allFailed
+              ? 'bg-churn-red bg-opacity-10 border border-churn-red border-opacity-30'
+              : errCount > 0
+                ? 'bg-warning bg-opacity-10 border border-warning border-opacity-30'
+                : 'bg-mrr-green bg-opacity-10 border border-mrr-green border-opacity-30'
+          )}>
+            <div className="flex items-center gap-2">
+              {allFailed ? <XCircle className="w-5 h-5 text-churn-red flex-shrink-0" /> : <CheckCircle className="w-5 h-5 text-mrr-green flex-shrink-0" />}
+              <p className="font-medium text-text-primary">
+                {companyResult.created > 0 && `${companyResult.created} companies created`}
+                {companyResult.updated > 0 && `${companyResult.created > 0 ? ' · ' : ''}${companyResult.updated} updated`}
+                {companyResult.skipped > 0 && ` · ${companyResult.skipped} skipped`}
+                {errCount > 0 && ` · ${errCount} failed`}
+              </p>
+            </div>
+            {errCount > 0 && (
+              <div className="ml-7 space-y-1">
+                {companyResult.errors.slice(0, 8).map((e, i) => (
+                  <p key={i} className="text-xs text-text-secondary font-mono">{e.message}</p>
+                ))}
+                {errCount > 8 && <p className="text-xs text-text-muted">…and {errCount - 8} more errors</p>}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
       {importError && !isImporting && (
         <div className="flex items-start gap-3 bg-churn-red bg-opacity-10 border border-churn-red border-opacity-30 rounded-lg p-4">
           <XCircle className="w-5 h-5 text-churn-red flex-shrink-0 mt-0.5" />
@@ -352,41 +449,43 @@ export default function ImportPage() {
         </div>
       )}
 
-      {/* Rebuild Ledger */}
-      <div className="card space-y-4">
-        <div>
-          <h2 className="font-semibold text-text-primary flex items-center gap-2">
-            <RefreshCw className="w-4 h-4 text-mrr-green" />
-            Rebuild Revenue Ledger
-          </h2>
-          <p className="text-text-secondary text-sm mt-0.5">
-            Run this after every import to update MRR, ARR, NRR and all dashboard metrics.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
+      {/* Rebuild Ledger (invoices only) */}
+      {entity === 'invoices' && (
+        <div className="card space-y-4">
           <div>
-            <label className="label block mb-1">From Month</label>
-            <input type="month" className="input" value={rebuildFrom} onChange={(e) => setRebuildFrom(e.target.value)} />
+            <h2 className="font-semibold text-text-primary flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 text-mrr-green" />
+              Rebuild Revenue Ledger
+            </h2>
+            <p className="text-text-secondary text-sm mt-0.5">
+              Run this after every import to update MRR, ARR, NRR and all dashboard metrics.
+            </p>
           </div>
-          <div>
-            <label className="label block mb-1">To Month</label>
-            <input type="month" className="input" value={rebuildTo} onChange={(e) => setRebuildTo(e.target.value)} />
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="label block mb-1">From Month</label>
+              <input type="month" className="input" value={rebuildFrom} onChange={(e) => setRebuildFrom(e.target.value)} />
+            </div>
+            <div>
+              <label className="label block mb-1">To Month</label>
+              <input type="month" className="input" value={rebuildTo} onChange={(e) => setRebuildTo(e.target.value)} />
+            </div>
+            <button
+              className="btn-primary flex items-center gap-2"
+              onClick={() => { setRebuildResult(null); triggerRebuild() }}
+              disabled={rebuilding || !rebuildFrom || !rebuildTo}
+            >
+              {rebuilding ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {rebuilding ? 'Rebuilding…' : 'Rebuild Ledger'}
+            </button>
           </div>
-          <button
-            className="btn-primary flex items-center gap-2"
-            onClick={() => { setRebuildResult(null); triggerRebuild() }}
-            disabled={rebuilding || !rebuildFrom || !rebuildTo}
-          >
-            {rebuilding ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            {rebuilding ? 'Rebuilding…' : 'Rebuild Ledger'}
-          </button>
+          {rebuildResult && (
+            <p className={`text-sm font-medium ${rebuildResult.startsWith('Error') ? 'text-churn-red' : 'text-mrr-green'}`}>
+              {rebuildResult.startsWith('Error') ? '✕ ' : '✓ '}{rebuildResult}
+            </p>
+          )}
         </div>
-        {rebuildResult && (
-          <p className={`text-sm font-medium ${rebuildResult.startsWith('Error') ? 'text-churn-red' : 'text-mrr-green'}`}>
-            {rebuildResult.startsWith('Error') ? '✕ ' : '✓ '}{rebuildResult}
-          </p>
-        )}
-      </div>
+      )}
 
       {/* Export section */}
       <div className="card space-y-3">
@@ -455,17 +554,11 @@ export default function ImportPage() {
                     <td className="table-cell">
                       {deleteConfirm === f.id ? (
                         <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => doDeleteImport(f.id)}
-                            className="text-xs text-churn-red hover:underline font-medium"
-                          >
+                          <button onClick={() => doDeleteImport(f.id)} className="text-xs text-churn-red hover:underline font-medium">
                             Confirm
                           </button>
                           <span className="text-text-muted text-xs">·</span>
-                          <button
-                            onClick={() => setDeleteConfirm(null)}
-                            className="text-xs text-text-secondary hover:text-text-primary"
-                          >
+                          <button onClick={() => setDeleteConfirm(null)} className="text-xs text-text-secondary hover:text-text-primary">
                             Cancel
                           </button>
                         </div>
