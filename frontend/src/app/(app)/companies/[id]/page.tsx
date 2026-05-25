@@ -173,9 +173,10 @@ export default function CompanyDetailPage() {
                 {company.domain} <ExternalLink className="w-3 h-3" />
               </a>
             )}
-            {company.country && (
+            {(company.country || company.city) && (
               <span className="text-xs text-text-muted flex items-center gap-1">
-                <MapPin className="w-3 h-3" />{company.city ? `${company.city}, ` : ''}{company.country}
+                <MapPin className="w-3 h-3" />
+                {[company.city, company.district, company.country].filter(Boolean).join(', ')}
               </span>
             )}
             {company.industry && (
@@ -183,9 +184,24 @@ export default function CompanyDetailPage() {
                 <Building2 className="w-3 h-3" />{company.industry}
               </span>
             )}
+            {company.phone1 && (
+              <span className="text-xs text-text-muted flex items-center gap-1">
+                <Phone className="w-3 h-3" />{company.phone1}
+              </span>
+            )}
+            {company.email && (
+              <a href={`mailto:${company.email}`} className="text-xs text-text-muted flex items-center gap-1 hover:text-mrr-green transition-colors">
+                <Mail className="w-3 h-3" />{company.email}
+              </a>
+            )}
             {company.hubspot_id && (
               <span className="text-xs text-text-muted bg-surface px-2 py-0.5 rounded border border-border">
                 HubSpot: {company.hubspot_id}
+              </span>
+            )}
+            {company.iso500_rank && (
+              <span className="text-xs text-text-muted bg-surface px-2 py-0.5 rounded border border-border">
+                ISO 500 #{company.iso500_rank}{company.data_year ? ` (${company.data_year})` : ''}
               </span>
             )}
           </div>
@@ -249,6 +265,67 @@ export default function CompanyDetailPage() {
               <Area type="monotone" dataKey="mrr" stroke="#10b981" strokeWidth={2} fill="url(#companyMrrGrad)" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Company Profile — extended fields */}
+      {(company.net_sales != null || company.ebitda != null || company.total_assets != null ||
+        company.nace_code || company.address || company.capital_share_public != null) && (
+        <div className="card">
+          <h2 className="font-semibold text-text-primary mb-4">Company Profile</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm">
+            {company.net_sales != null && (
+              <div><p className="text-xs text-text-muted mb-0.5">Net Sales</p><p className="font-medium text-text-primary">{company.net_sales.toLocaleString('tr-TR')} TL</p></div>
+            )}
+            {company.production_sales_net != null && (
+              <div><p className="text-xs text-text-muted mb-0.5">Production Sales (Net)</p><p className="font-medium text-text-primary">{company.production_sales_net.toLocaleString('tr-TR')} TL</p></div>
+            )}
+            {company.gross_value_added != null && (
+              <div><p className="text-xs text-text-muted mb-0.5">Gross Value Added</p><p className="font-medium text-text-primary">{company.gross_value_added.toLocaleString('tr-TR')} TL</p></div>
+            )}
+            {company.ebitda != null && (
+              <div><p className="text-xs text-text-muted mb-0.5">EBITDA (FAVÖK)</p><p className="font-medium text-text-primary">{company.ebitda.toLocaleString('tr-TR')} TL</p></div>
+            )}
+            {company.pre_tax_profit != null && (
+              <div><p className="text-xs text-text-muted mb-0.5">Pre-tax Profit/Loss</p><p className={`font-medium ${company.pre_tax_profit >= 0 ? 'text-mrr-green' : 'text-churn-red'}`}>{company.pre_tax_profit.toLocaleString('tr-TR')} TL</p></div>
+            )}
+            {company.equity != null && (
+              <div><p className="text-xs text-text-muted mb-0.5">Equity (Özkaynaklar)</p><p className="font-medium text-text-primary">{company.equity.toLocaleString('tr-TR')} TL</p></div>
+            )}
+            {company.total_assets != null && (
+              <div><p className="text-xs text-text-muted mb-0.5">Total Assets (Aktif)</p><p className="font-medium text-text-primary">{company.total_assets.toLocaleString('tr-TR')} TL</p></div>
+            )}
+            {company.exports_usd != null && (
+              <div><p className="text-xs text-text-muted mb-0.5">Exports</p><p className="font-medium text-text-primary">${company.exports_usd.toLocaleString('tr-TR')}K</p></div>
+            )}
+            {(company.capital_share_public != null || company.capital_share_private != null ||
+              company.capital_share_foreign != null || company.capital_share_float != null) && (
+              <div className="col-span-2 lg:col-span-4 border-t border-border pt-3 mt-1">
+                <p className="text-xs text-text-muted mb-1.5">Capital Structure</p>
+                <div className="flex flex-wrap gap-3">
+                  {company.capital_share_public != null && <span className="text-xs bg-surface px-2 py-0.5 rounded border border-border">Public {company.capital_share_public}%</span>}
+                  {company.capital_share_private != null && <span className="text-xs bg-surface px-2 py-0.5 rounded border border-border">Private {company.capital_share_private}%</span>}
+                  {company.capital_share_foreign != null && <span className="text-xs bg-surface px-2 py-0.5 rounded border border-border">Foreign {company.capital_share_foreign}%</span>}
+                  {company.capital_share_float != null && <span className="text-xs bg-surface px-2 py-0.5 rounded border border-border">Float {company.capital_share_float}%</span>}
+                </div>
+              </div>
+            )}
+            {(company.nace_description || company.nace_code) && (
+              <div className="col-span-2"><p className="text-xs text-text-muted mb-0.5">NACE</p><p className="font-medium text-text-primary">{[company.nace_description, company.nace_code].filter(Boolean).join(' · ')}</p></div>
+            )}
+            {(company.isic_description || company.isic_code) && (
+              <div className="col-span-2"><p className="text-xs text-text-muted mb-0.5">ISIC</p><p className="font-medium text-text-primary">{[company.isic_description, company.isic_code].filter(Boolean).join(' · ')}</p></div>
+            )}
+            {company.chamber_of_commerce && (
+              <div className="col-span-2"><p className="text-xs text-text-muted mb-0.5">Chamber of Commerce</p><p className="font-medium text-text-primary">{company.chamber_of_commerce}</p></div>
+            )}
+            {company.address && (
+              <div className="col-span-2 lg:col-span-4"><p className="text-xs text-text-muted mb-0.5">Address</p><p className="font-medium text-text-primary">{[company.address, company.district, company.postal_code].filter(Boolean).join(', ')}</p></div>
+            )}
+            {company.phone2 && (
+              <div><p className="text-xs text-text-muted mb-0.5">Phone 2</p><p className="font-medium text-text-primary">{company.phone2}</p></div>
+            )}
+          </div>
         </div>
       )}
 

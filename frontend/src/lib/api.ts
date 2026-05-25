@@ -743,7 +743,7 @@ export interface Company {
   hubspot_id: string | null
   external_id: string | null
   created_at: string
-  // Phase 1 fields
+  // Phase 1
   employee_count?: number | null
   country?: string | null
   city?: string | null
@@ -752,6 +752,41 @@ export interface Company {
   annual_revenue?: number | null
   source?: string | null
   owner_id?: string | null
+  // Phase 5 scores
+  health_score?: number | null
+  expansion_score?: number | null
+  // Financial metrics
+  net_sales?: number | null
+  production_sales_net?: number | null
+  gross_value_added?: number | null
+  equity?: number | null
+  total_assets?: number | null
+  pre_tax_profit?: number | null
+  ebitda?: number | null
+  exports_usd?: number | null
+  // Capital structure
+  capital_share_public?: number | null
+  capital_share_private?: number | null
+  capital_share_foreign?: number | null
+  capital_share_float?: number | null
+  // Industry classification
+  nace_description?: string | null
+  nace_code?: string | null
+  isic_description?: string | null
+  isic_code?: string | null
+  chamber_of_commerce?: string | null
+  // Location
+  district?: string | null
+  address?: string | null
+  postal_code?: string | null
+  // Contact
+  phone1?: string | null
+  phone2?: string | null
+  email?: string | null
+  // Rankings
+  iso500_rank?: number | null
+  iso500_rank_prev_year?: number | null
+  data_year?: number | null
   // Computed
   current_mrr?: number
   current_mrr_month?: string | null

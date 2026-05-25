@@ -6,8 +6,8 @@ import { validate } from '../middleware/validate.middleware'
 
 const router = Router()
 
-const createSchema = Joi.object({
-  name: Joi.string().required(),
+const profileFields = {
+  // existing
   domain: Joi.string().optional().allow('', null),
   external_id: Joi.string().optional().allow('', null),
   segment: Joi.string().valid('SMB', 'MID', 'ENT').optional().allow(null),
@@ -20,21 +20,48 @@ const createSchema = Joi.object({
   annual_revenue: Joi.number().optional().allow(null),
   source: Joi.string().optional().allow('', null),
   owner_id: Joi.string().uuid().optional().allow(null),
+  // financial metrics
+  net_sales: Joi.number().optional().allow(null),
+  production_sales_net: Joi.number().optional().allow(null),
+  gross_value_added: Joi.number().optional().allow(null),
+  equity: Joi.number().optional().allow(null),
+  total_assets: Joi.number().optional().allow(null),
+  pre_tax_profit: Joi.number().optional().allow(null),
+  ebitda: Joi.number().optional().allow(null),
+  exports_usd: Joi.number().optional().allow(null),
+  // capital structure
+  capital_share_public: Joi.number().min(0).max(100).optional().allow(null),
+  capital_share_private: Joi.number().min(0).max(100).optional().allow(null),
+  capital_share_foreign: Joi.number().min(0).max(100).optional().allow(null),
+  capital_share_float: Joi.number().min(0).max(100).optional().allow(null),
+  // industry classification
+  nace_description: Joi.string().optional().allow('', null),
+  nace_code: Joi.string().optional().allow('', null),
+  isic_description: Joi.string().optional().allow('', null),
+  isic_code: Joi.string().optional().allow('', null),
+  chamber_of_commerce: Joi.string().optional().allow('', null),
+  // location
+  district: Joi.string().optional().allow('', null),
+  address: Joi.string().optional().allow('', null),
+  postal_code: Joi.string().optional().allow('', null),
+  // contact
+  phone1: Joi.string().optional().allow('', null),
+  phone2: Joi.string().optional().allow('', null),
+  email: Joi.string().email({ tlds: { allow: false } }).optional().allow('', null),
+  // rankings
+  iso500_rank: Joi.number().integer().positive().optional().allow(null),
+  iso500_rank_prev_year: Joi.number().integer().positive().optional().allow(null),
+  data_year: Joi.number().integer().min(2000).max(2100).optional().allow(null),
+}
+
+const createSchema = Joi.object({
+  name: Joi.string().required(),
+  ...profileFields,
 })
 
 const updateSchema = Joi.object({
   name: Joi.string().optional(),
-  domain: Joi.string().optional().allow('', null),
-  external_id: Joi.string().optional().allow('', null),
-  segment: Joi.string().valid('SMB', 'MID', 'ENT').optional().allow(null),
-  employee_count: Joi.number().integer().positive().optional().allow(null),
-  country: Joi.string().optional().allow('', null),
-  city: Joi.string().optional().allow('', null),
-  industry: Joi.string().optional().allow('', null),
-  status: Joi.string().valid('active', 'churned', 'at-risk', 'prospect').optional(),
-  annual_revenue: Joi.number().optional().allow(null),
-  source: Joi.string().optional().allow('', null),
-  owner_id: Joi.string().uuid().optional().allow(null),
+  ...profileFields,
 }).min(1)
 
 // GET /companies
